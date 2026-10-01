@@ -48,14 +48,9 @@ function decisionOf(reply: string): 'accept' | 'acceptForSession' | 'decline' | 
   return undefined
 }
 
-// A message sent to a running agent arrives wrapped in the engine's words
-// ("… sent a message while you were working: <it> Address this …").
-const WRAPPED = /^[^\n]*sent a message while you were working:\n([\s\S]*?)\n\nAddress this before completing your current task\.?$/
-
 // Codex's response to what it asked, from Claude's reply; undefined when the
 // reply does not answer it, so the question is asked again.
-export function replyOf(asked: Asked, message: string): Reply | undefined {
-  const reply = WRAPPED.exec(message.trim())?.[1] ?? message
+export function replyOf(asked: Asked, reply: string): Reply | undefined {
   const p = asked.params ?? {}
   switch (asked.method) {
     case 'item/commandExecution/requestApproval':

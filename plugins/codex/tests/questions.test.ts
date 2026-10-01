@@ -30,12 +30,6 @@ describe('questions', () => {
     expect(replyOf(COMMAND, 'what would it change?')).toBeUndefined()
   })
 
-  test('a reply sent while the agent ran is read inside the engine wrapper', () => {
-    // As it reached the agent in a live run.
-    const wrapped = 'The coordinator sent a message while you were working:\ndecline\n\nAddress this before completing your current task.'
-    expect(replyOf(COMMAND, wrapped)).toEqual({ result: { decision: 'decline' } })
-  })
-
   test('a permissions request grants what it asked for, or nothing', () => {
     const asked = { id: 1, method: 'item/permissions/requestApproval', params: { permissions: { network: { enabled: true } } } }
     expect(replyOf(asked, 'approve')).toEqual({ result: { permissions: { network: { enabled: true } }, scope: 'turn' } })

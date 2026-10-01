@@ -32,11 +32,18 @@ describe('requests', () => {
 
   test('a queued message the engine folded into the first turn is the next request, resuming the session', () => {
     const rows = rowsOf([user(TASK, QUEUED, REMINDER), ran(), delivered()])
-    expect(requestOf(rows, [TASK])).toEqual({ prompt: QUEUED, opening: TASK, texts: [QUEUED], sessionId: SESSION })
+    expect(requestOf(rows, [TASK])).toEqual({ prompt: 'Also count the lines.', opening: TASK, texts: [QUEUED], sessionId: SESSION })
   })
 
   test('a queued message delivered with the handback result is the next request', () => {
-    expect(requestOf(rowsOf([user(TASK, REMINDER), ran(), delivered(false, QUEUED)]), [TASK])).toMatchObject({ prompt: QUEUED, sessionId: SESSION })
+    expect(requestOf(rowsOf([user(TASK, REMINDER), ran(), delivered(false, QUEUED)]), [TASK])).toMatchObject({ prompt: 'Also count the lines.', sessionId: SESSION })
+  })
+
+  test('a message the engine placed twice, wrapped and as sent, reaches Codex once', () => {
+    // As a live headless run placed one SendMessage.
+    const wrapped = 'The coordinator sent a message while you were working:\ndecline\n\nAddress this before completing your current task.\n'
+    const request = requestOf(rowsOf([user(TASK), ran(false), user(wrapped, 'decline')]), [TASK])
+    expect(request).toMatchObject({ prompt: 'decline', texts: [wrapped, 'decline'] })
   })
 
   test('an engine nudge is no request', () => {

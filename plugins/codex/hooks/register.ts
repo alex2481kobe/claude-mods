@@ -136,9 +136,7 @@ export const register: Register = on => {
     }
     if (request) {
       const pending = held.get(agentId)
-      // The engine may place one message twice (wrapped, and as sent), so
-      // each is tried on its own.
-      const reply = pending && request.texts.map(text => replyOf(pending.asked, text)).find(Boolean)
+      const reply = pending && replyOf(pending.asked, request.prompt)
       const cwd = await $.session.cwd()
       try {
         if (pending && !reply) {
