@@ -57,10 +57,11 @@ const sent = atom({ plugin: 'codex', key: 'sent' } as const, {})
 
 const shown = (text: string): TurnStepChunk => ({ kind: 'text', index: 0, text })
 
-// Codex's progress as notices in the agent's conversation, appended as it
-// happens: the agent's view shows them live, and the agent list's activity
-// line follows them as it follows a native agent's steps. The model never
-// reads a notice. Display only, so a refused append changes nothing else.
+// Codex's progress also as notices in the agent's conversation, appended as
+// it happens: a notice is what refreshes the agent list's activity line, while
+// the agent's view shows the step's text. The model never reads a notice, and
+// only the detailed transcript (ctrl+o) shows both. Display only, so a refused
+// append changes nothing else.
 async function note($: EngineInterface, agentId: string, text: string): Promise<void> {
   await $.session
     .append({ agentId, message: { type: 'system', content: [{ type: 'text', text: text.trimEnd() }] } })
@@ -149,15 +150,9 @@ export const register: Register = on => {
     let question: string | undefined
     let model = 'codex'
     let server: Server | undefined
-    // The header and the session line are the agent's own text (a follow-up
-    // resumes the session it names); the rest of Codex's progress is noted.
     const show = (text: string) => {
       progress += text
       return shown(text)
-    }
-    const tell = (text: string) => {
-      progress += text
-      return note($, agentId, text)
     }
     if (request) {
       const pending = held.get(agentId)
@@ -175,7 +170,8 @@ export const register: Register = on => {
           server = pending.server
           run.threadId = pending.threadId
           await server.respond(pending.asked.id, reply)
-          await tell(`answered Codex\n`)
+          yield show(`answered Codex\n`)
+          await note($, agentId, 'answered Codex')
         } else {
           // The spawn prompt's flags hold for every run of the agent; they are
           // not part of the task.
@@ -212,7 +208,10 @@ export const register: Register = on => {
             continue
           }
           const step = apply(run, message.method, message.params)
-          if (step !== undefined) await tell(step)
+          if (step !== undefined) {
+            yield show(step)
+            await note($, agentId, step)
+          }
           if (run.isDone) break
         }
       } catch (err) {
