@@ -32,7 +32,7 @@ describe('events', () => {
     expect(run.sessionId).toBe(SESSION)
     expect(run.answer).toBe('example.com/m go 1.26')
     expect(shown).toContain(`codex session ${SESSION}`)
-    expect(shown).toContain("$ zsh -lc 'cat go.mod'")
+    expect(shown).toContain('$ cat go.mod')
     expect(shown).not.toContain('exit 0')
   })
 

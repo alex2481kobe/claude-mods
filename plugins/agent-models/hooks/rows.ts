@@ -15,6 +15,16 @@ export function upsert(rows: readonly AgentRow[], id: string, patch: Partial<Age
   return rows.map(r => (r.id === id ? { ...r, ...patch } : r))
 }
 
+// Claude model ids as people say them: `claude-opus-5-5` reads `Opus 5.5`,
+// a dated id like `claude-haiku-4-5-20251001` reads `Haiku 4.5`. An id of
+// another shape is shown as it is.
+export function nameOf(id: string): string {
+  const match = /^claude-([a-z]+)-(\d+)-(\d+)(?:-\d{8})?(\[1m\])?$/i.exec(id)
+  if (!match) return id
+  const name = match[1]!
+  return `${name[0]!.toUpperCase()}${name.slice(1)} ${match[2]}.${match[3]}`
+}
+
 export type Line = { mark: string; type: string; model: string; label: string; isRunning: boolean }
 
 // A subagent run by another program (the codex mod) names its model in its
@@ -28,8 +38,8 @@ export function lineOf(row: AgentRow): Line {
     ? elsewhere[1]!
     : row.model
       ? row.effort
-        ? `${row.model} (${row.effort})`
-        : row.model
+        ? `${nameOf(row.model)} (${row.effort})`
+        : nameOf(row.model)
       : 'model pending'
   const mark = { running: '●', done: '✓', stopped: '■', failed: '✗' }[row.status]
   return { mark, type: row.type, model, label, isRunning: row.status === 'running' }

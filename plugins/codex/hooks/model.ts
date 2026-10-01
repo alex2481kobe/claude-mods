@@ -1,3 +1,4 @@
+import { nameOf } from './names'
 import type { Options } from './options'
 
 // What Codex runs with: its config.toml's top-level model and reasoning
@@ -17,9 +18,10 @@ export function configOf(toml: string): Choice {
   return choice
 }
 
-// `gpt-5 (high)`: the chosen model and effort over the config's.
+// `Sol 6.1 (high)`: the chosen model and effort over the config's.
 export function labelOf(config: Choice, options: Pick<Options, 'model' | 'effort'>): string {
-  const model = options.model ?? config.model ?? 'default model'
+  const id = options.model ?? config.model
+  const model = id ? nameOf(id) : 'default model'
   const effort = options.effort ?? config.effort
   return effort ? `${model} (${effort})` : model
 }

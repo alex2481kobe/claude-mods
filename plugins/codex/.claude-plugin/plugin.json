@@ -9,5 +9,10 @@
   "homepage": "https://github.com/alex2481kobe/claude-mods",
   "repository": "https://github.com/alex2481kobe/claude-mods",
   "license": "Apache-2.0",
-  "keywords": ["codex", "subagent", "mod"]
+  "keywords": [
+    "codex",
+    "subagent",
+    "mod"
+  ],
+  "types": "./types/index.d.ts"
 }

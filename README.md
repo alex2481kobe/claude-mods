@@ -10,7 +10,9 @@ Claude starts Codex with the Agent tool, the same way it starts any other
 subagent. Codex shows up in the task list, runs in the background, and its
 answer comes back to Claude. You can message it to follow up. No Claude model
 runs inside the agent: the mod runs `codex exec` in its place and streams what
-Codex does into the agent's transcript.
+Codex does into the agent's transcript, and the agent's spinner and the status
+line say what Codex is doing right now. (A small Claude model stands in only if
+the mod itself fails, to report that failure.)
 
 | Agent type    | Codex sandbox     | Use it for                                  |
 | ------------- | ----------------- | ------------------------------------------- |
@@ -61,7 +63,8 @@ agent's label and transcript show the model your `config.toml` names.
 
 The mod registers the two agent types. When a `codex:*` agent's loop asks its
 model for a response, the mod answers instead: it runs
-`codex exec --json -s <sandbox>` with the agent's prompt in the session's working
+`codex exec --json -s <sandbox>` (approvals off, so the sandbox is the limit)
+with the agent's prompt in the session's working
 directory, streams Codex's messages and commands into the agent's transcript,
 and hands Codex's final message back as the agent's report. A follow-up message
 resumes the same Codex session with `codex exec resume`. Stopping the agent stops

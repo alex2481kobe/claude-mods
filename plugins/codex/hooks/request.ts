@@ -1,8 +1,8 @@
 import type { SessionMessage } from 'claude-code'
 
 // What a codex agent's loop is being asked, read from its own transcript so
-// the mod keeps no state: the spawn prompt, or the follow-ups sent after its
-// last handback, with the Codex session to resume.
+// the mod keeps no state: the spawn prompt on the first run, then whatever
+// was sent after the last run, resuming that run's Codex session.
 
 export const HANDBACK = 'SubagentHandback'
 
@@ -20,22 +20,25 @@ export function requestOf(rows: readonly SessionMessage[]): Request | undefined 
   const first = rows.find(r => r.role === 'user' && r.text !== '' && !isEngineRow(r.text))
   if (!first) return undefined
 
+  // A run ends at the assistant row that names its session or hands back,
+  // whether it finished or was stopped part way.
   let sessionId: string | undefined
-  let handedBack = false
+  let hasRun = false
   let followUps: string[] = []
   for (const row of rows) {
     if (row.role === 'assistant') {
-      sessionId = SESSION.exec(row.text)?.[1] ?? sessionId
-      if (row.toolUses.some(u => u.tool === HANDBACK)) {
-        handedBack = true
+      const named = SESSION.exec(row.text)?.[1]
+      if (named || row.toolUses.some(u => u.tool === HANDBACK)) {
+        sessionId = named ?? sessionId
+        hasRun = true
         followUps = []
       }
-    } else if (handedBack && row.text !== '' && !isEngineRow(row.text) && !row.toolResults?.length) {
+    } else if (hasRun && row.text !== '' && !isEngineRow(row.text) && !row.toolResults?.length) {
       followUps.push(row.text)
     }
   }
 
-  if (!handedBack) return { prompt: first.text, opening: first.text }
+  if (!hasRun) return { prompt: first.text, opening: first.text }
   if (followUps.length === 0) return undefined
   return { prompt: followUps.join('\n\n'), opening: first.text, sessionId }
 }
