@@ -53,12 +53,12 @@ const handedBack: SessionMessage = {
 describe('requestOf', () => {
   test('the first run is the spawn prompt, past the engine reminder', () => {
     const rows = [user('review x'), user('<system-reminder>\ncall SubagentHandback</system-reminder>')]
-    expect(requestOf(rows)).toEqual({ prompt: 'review x' })
+    expect(requestOf(rows)).toEqual({ prompt: 'review x', opening: 'review x' })
   })
 
   test('a follow-up after the handback resumes the same Codex session', () => {
     const rows = [user('review x'), handedBack, user('and y?')]
-    expect(requestOf(rows)).toEqual({ prompt: 'and y?', sessionId: SESSION })
+    expect(requestOf(rows)).toEqual({ prompt: 'and y?', opening: 'review x', sessionId: SESSION })
   })
 
   test('an engine nudge after the handback is not a follow-up', () => {

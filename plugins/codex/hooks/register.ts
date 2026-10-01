@@ -1,7 +1,8 @@
 import type { EngineInterface, Register } from 'claude-code'
 
 import { apply, lines, type Run } from './events'
-import { modelOf } from './model'
+import { configOf, labelOf, modelsOf, type Choice } from './model'
+import { optionsOf, overridesOf, type Options } from './options'
 import { HANDBACK, requestOf } from './request'
 
 // Codex as native subagent types. The Agent tool starts one like any other
@@ -19,24 +20,35 @@ const SANDBOX: Record<string, string> = {
 // for an answer.
 const FALLBACK = `You stand in for Codex, which failed to start. Call ${HANDBACK} once with the message "codex mod: the run failed to start; see this agent's transcript and the debug log." Do nothing else.`
 
-function argvOf(sandbox: string, sessionId: string | undefined): string[] {
-  const common = ['--json', '--skip-git-repo-check']
+function argvOf(sandbox: string, sessionId: string | undefined, options: Options): string[] {
+  const common = ['--json', '--skip-git-repo-check', ...overridesOf(options)]
   return sessionId
     ? ['codex', 'exec', 'resume', ...common, '-c', `sandbox_mode="${sandbox}"`, sessionId, '-']
     : ['codex', 'exec', ...common, '-s', sandbox, '-']
 }
 
-// The model Codex will run with, from its config.toml; Codex's own default
-// when the config names none or cannot be read.
-async function codexModel($: EngineInterface): Promise<string> {
+async function codexHome($: EngineInterface): Promise<string> {
   const home = (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE'))
-  const dir = (await $.env.get('CODEX_HOME')) ?? `${home}/.codex`
+  return (await $.env.get('CODEX_HOME')) ?? `${home}/.codex`
+}
+
+async function readOr($: EngineInterface, path: string): Promise<string> {
   try {
-    return modelOf(await $.fs.read(`${dir}/config.toml`)) ?? 'default model'
+    return await $.fs.read(path)
   } catch {
-    return 'default model'
+    return ''
   }
 }
+
+// The model and effort Codex's config.toml names; empty when it names none.
+async function codexConfig($: EngineInterface): Promise<Choice> {
+  return configOf(await readOr($, `${await codexHome($)}/config.toml`))
+}
+
+const CHOOSING = (models: string[]) =>
+  ` To choose a Codex model or reasoning effort, start the prompt with a line \`model: <id>\` and/or \`effort: <level>\`` +
+  (models.length > 0 ? ` (models: ${models.join(', ')})` : '') +
+  `; left out, Codex uses its own config.`
 
 function handbackOf(run: Run, code: number | null, stderr: string): string {
   if (run.answer && !run.error && code === 0) return run.answer
@@ -47,24 +59,26 @@ function handbackOf(run: Run, code: number | null, stderr: string): string {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const common = { prompt: FALLBACK, tools: ['Read'], model: 'haiku', omitClaudeMd: true } as const
+    const choosing = CHOOSING(modelsOf(await readOr($, `${await codexHome($)}/models_cache.json`)))
     await $.agent.register({
       ...common,
       name: 'read',
       description:
-        'OpenAI Codex in a read-only sandbox: a second opinion, review, research or scoping by a different model. Give it a self-contained prompt; it cannot see this conversation.',
+        'OpenAI Codex in a read-only sandbox: a second opinion, review, research or scoping by a different model. Give it a self-contained prompt; it cannot see this conversation.' + choosing,
     })
     await $.agent.register({
       ...common,
       name: 'write',
       description:
-        'OpenAI Codex with workspace-write in the working directory: bounded implementation by a different model. Give it a self-contained prompt naming the files it owns; it cannot see this conversation.',
+        'OpenAI Codex with workspace-write in the working directory: bounded implementation by a different model. Give it a self-contained prompt naming the files it owns; it cannot see this conversation.' + choosing,
     })
     return next(e)
   })
 
   on('agent.spawn', async ($, e, next) => {
     if (!(e.subagentType in SANDBOX)) return next(e)
-    return next({ ...e, description: `${e.description} · codex ${await codexModel($)}` })
+    const label = labelOf(await codexConfig($), optionsOf(e.prompt))
+    return next({ ...e, description: `${e.description} · codex ${label}` })
   })
 
   on('turn.step', async function* ($, e, next) {
@@ -83,13 +97,14 @@ export const register: Register = on => {
     let stderr = ''
     let code: number | null = null
     if (request) {
-      const header = `codex ${await codexModel($)} · ${sandbox}\n`
+      const options = optionsOf(request.opening)
+      const header = `codex ${labelOf(await codexConfig($), options)} · ${sandbox}\n`
       progress += header
       yield { kind: 'text', index: 0, text: header }
       const child = $.process.spawn({
-        argv: argvOf(sandbox, request.sessionId),
+        argv: argvOf(sandbox, request.sessionId, options),
         cwd: await $.session.cwd(),
-        input: request.prompt,
+        input: request.sessionId ? request.prompt : options.prompt,
       })
       let buffer = ''
       try {

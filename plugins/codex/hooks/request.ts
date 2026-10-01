@@ -13,7 +13,8 @@ function isEngineRow(text: string): boolean {
   return text.startsWith('<system-reminder>') || text.startsWith('[handback')
 }
 
-export type Request = { prompt: string; sessionId?: string }
+// `opening` is the spawn prompt, which carries the agent's options.
+export type Request = { prompt: string; opening: string; sessionId?: string }
 
 export function requestOf(rows: readonly SessionMessage[]): Request | undefined {
   const first = rows.find(r => r.role === 'user' && r.text !== '' && !isEngineRow(r.text))
@@ -34,7 +35,7 @@ export function requestOf(rows: readonly SessionMessage[]): Request | undefined 
     }
   }
 
-  if (!handedBack) return { prompt: first.text }
+  if (!handedBack) return { prompt: first.text, opening: first.text }
   if (followUps.length === 0) return undefined
-  return { prompt: followUps.join('\n\n'), sessionId }
+  return { prompt: followUps.join('\n\n'), opening: first.text, sessionId }
 }
