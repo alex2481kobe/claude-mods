@@ -14,7 +14,7 @@ const BLANK = '\u00a0'
 
 const cardLines = (stats: TurnStats): string[] => {
   const lines = [
-    `${stats.seconds}s  ${stats.tools} tool calls  ${stats.outputTokens} out tokens`,
+    `${stats.seconds}s  ${stats.tools} tool ${stats.tools === 1 ? 'call' : 'calls'}  ${stats.outputTokens} out tokens`,
     stats.model,
   ]
   const width = Math.max(...lines.map(line => line.length))

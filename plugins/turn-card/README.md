@@ -9,6 +9,8 @@ Hover a prompt you typed and a small card appears over the rows above it:
 - how many output tokens it wrote
 - which model answered
 
+![The card over the transcript while the pointer rests on a prompt](media/hover-card.png)
+
 Move the pointer off and it is gone. It takes no rows: no pane, no band above
 the prompt, no status line. The card is solid in your terminal's own background
 color, so it reads cleanly over the text beneath it.
