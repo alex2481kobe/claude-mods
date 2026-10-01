@@ -1,7 +1,10 @@
 // What a codex agent's loop is being asked: every message in its conversation
-// that has not yet been passed to Codex. Position is no guide, since the
-// engine may fold a message queued while Codex ran into an earlier turn, so
-// the caller keeps the list of messages already passed on (`sent`).
+// whose words have not yet been passed to Codex. Position is no guide, since
+// the engine may fold a message queued while Codex ran into an earlier turn,
+// so the caller keeps the words already passed on (`sent`). Words are passed
+// once: the engine delivers some messages again (the spawn prompt when the
+// user writes in the agent's view, a queued message after its turn), and
+// nothing tells such a delivery from the same words sent again.
 
 export const HANDBACK = 'SubagentHandback'
 
@@ -12,11 +15,13 @@ function isEngineText(text: string): boolean {
   return text.startsWith('<system-reminder>') || text.startsWith('[handback')
 }
 
-// A message sent to a running agent arrives wrapped in the engine's words
-// ("… sent a message while you were working: <it> Address this before
-// completing your current task."). That is an instruction to a Claude
-// subagent; Codex gets the message as it was sent.
-const WRAPPED = /^[^\n]*sent a message while you were working:\n([\s\S]*?)\n\nAddress this before completing your current task\.?$/
+// A message sent to an agent may arrive wrapped in the engine's words: a
+// first line naming who sent it ("The user sent a new message while you were
+// working:", "The coordinator sent a message while you were working:",
+// "Another Claude session sent a message …"), the message, a blank line and
+// one paragraph of instructions to a Claude subagent. Codex gets the message
+// as it was sent.
+const WRAPPED = /^[^\n]* sent a (?:new )?message while you were working:\n([\s\S]*)\n\n[^\n]+$/
 
 export function sentAs(text: string): string {
   return WRAPPED.exec(text.trim())?.[1] ?? text
@@ -64,33 +69,24 @@ export function rowsOf(turns: readonly ApiTurn[]): Row[] {
 }
 
 // `opening` is the spawn prompt, which carries the agent's options; `texts`
-// are the messages this request passes on, for the caller to add to `sent`.
+// are the words this request passes on, for the caller to add to `sent`.
 export type Request = { prompt: string; opening: string; texts: string[]; sessionId?: string }
 
 export function requestOf(rows: readonly Row[], sent: readonly string[]): Request | undefined {
-  const asked = rows.filter(r => r.role === 'user').flatMap(r => r.texts)
+  const asked = rows.filter(r => r.role === 'user').flatMap(r => r.texts).map(sentAs)
   // The opening carries the agent's options. The first text passed to Codex
   // is the true one; the engine may later place another message ahead of it.
   const opening = sent[0] ?? asked[0]
   if (opening === undefined) return undefined
 
-  // Each message once: a text sent twice on purpose is asked twice.
-  const left = [...sent]
-  const texts = asked.filter(text => {
-    const at = left.indexOf(text)
-    if (at === -1) return true
-    left.splice(at, 1)
-    return false
-  })
+  const texts = asked.filter((text, i) => !sent.includes(text) && asked.indexOf(text) === i)
   if (texts.length === 0) return undefined
 
   let sessionId: string | undefined
   for (const row of rows) {
     if (row.role === 'assistant') sessionId = SESSION.exec(row.text)?.[1] ?? sessionId
   }
-  // The engine may place one message twice, wrapped and as sent: once each.
-  const said = texts.map(sentAs).filter((text, i, all) => all.indexOf(text) === i)
-  return { prompt: said.join('\n\n'), opening, texts, sessionId: sent.length > 0 ? sessionId : undefined }
+  return { prompt: texts.join('\n\n'), opening, texts, sessionId: sent.length > 0 ? sessionId : undefined }
 }
 
 // Whether this loop reports through a SubagentHandback call. An interactive
