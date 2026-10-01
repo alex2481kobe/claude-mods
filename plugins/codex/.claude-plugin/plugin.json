@@ -1,6 +1,6 @@
 {
   "name": "codex",
-  "version": "0.2.0",
+  "version": "0.2.5",
   "description": "OpenAI Codex as native Claude Code subagents: the Agent tool starts one and the mod runs codex exec in its place, no model in between",
   "author": {
     "name": "alex2481kobe",
@@ -13,5 +13,6 @@
     "codex",
     "subagent",
     "mod"
-  ]
+  ],
+  "types": "./types/index.d.ts"
 }

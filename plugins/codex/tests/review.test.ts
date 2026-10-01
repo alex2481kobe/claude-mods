@@ -1,12 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
-import type { SessionMessage } from 'claude-code'
 
 import { apply, type Run } from '../hooks/events'
 import { nameOf } from '../hooks/names'
-import { requestOf } from '../hooks/request'
 
-const SESSION = '01a0f8f0-0000-7000-8000-000000000000'
-const user = (text: string): SessionMessage => ({ role: 'user', text, toolUses: [] })
 
 describe('names', () => {
   test('codex ids read as people say them', () => {
@@ -27,9 +23,10 @@ describe('events', () => {
   })
 })
 
-describe('requestOf', () => {
-  test('a run stopped part way resumes its session on the next message', () => {
-    const stopped: SessionMessage = { role: 'assistant', text: `codex Sol 6.1 · workspace-write\ncodex session ${SESSION}\n\n$ npm test\n`, toolUses: [] }
-    expect(requestOf([user('fix x'), stopped, user('continue')])).toEqual({ prompt: 'continue', opening: 'fix x', sessionId: SESSION })
+describe('usage', () => {
+  test('a completed turn carries Codex usage in the engine shape, cached tokens apart', () => {
+    const run: Run = {}
+    apply(run, JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1000, cached_input_tokens: 800, output_tokens: 50, reasoning_output_tokens: 0 } }))
+    expect(run.usage).toEqual({ input_tokens: 200, output_tokens: 50, cache_read_input_tokens: 800, cache_creation_input_tokens: 0 })
   })
 })

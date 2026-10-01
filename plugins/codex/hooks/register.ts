@@ -1,9 +1,10 @@
-import type { EngineInterface, Register, TurnStepChunk } from 'claude-code'
+import { atom, read, update } from 'claude-code'
+import type { EngineInterface, Register, TurnStepChunk, TurnUsage } from 'claude-code'
 
 import { apply, lines, type Run } from './events'
 import { configOf, labelOf, modelsOf, type Choice } from './model'
 import { optionsOf, overridesOf, type Options } from './options'
-import { HANDBACK, handsBack, lastReport, requestOf } from './request'
+import { HANDBACK, handsBack, lastReport, requestOf, rowsOf } from './request'
 
 // Codex as native subagent types. The Agent tool starts one like any other
 // subagent (task list, background, SendMessage); a turn.step hook answers its
@@ -51,6 +52,9 @@ const CHOOSING = (models: string[]) =>
   (models.length > 0 ? ` (models: ${models.join(', ')})` : '') +
   `; left out, Codex uses its own config.`
 
+// What each codex agent has passed to Codex, so a message is sent once.
+const sent = atom({ plugin: 'codex', key: 'sent' } as const, {})
+
 function handbackOf(run: Run, code: number | null, stderr: string): string {
   if (run.answer && !run.error && code === 0) return run.answer
   const why = run.error ?? (stderr.trim().split('\n').slice(-5).join('\n') || `exit ${code}`)
@@ -89,30 +93,33 @@ export const register: Register = on => {
     const sandbox = agent && SANDBOX[agent.type]
     if (!sandbox) return yield* next(e)
 
-    const rows = await $.session.messages({ agentId })
-    if ('deny' in rows) throw new Error(rows.deny)
-    const request = requestOf(rows)
-    // Where the loop reports with a handback call, Codex's progress is the
-    // transcript's text; where its final text is the report, the progress is
-    // shown live as thinking, which the transcript does not keep.
+    const api = await $.session.messages({ as: 'api', agentId })
+    if ('deny' in api) throw new Error(api.deny)
+    const rows = rowsOf(api)
+    const request = requestOf(rows, (await read($, sent))[agentId] ?? [])
+    // Codex's progress is the transcript's text; the report goes back with a
+    // handback call, or as the final text where the loop has no such tool.
     const handback = handsBack(rows)
-    const shown = (text: string): TurnStepChunk =>
-      handback ? { kind: 'text', index: 0, text } : { kind: 'thinking', index: 0, text }
+    const shown = (text: string): TurnStepChunk => ({ kind: 'text', index: 0, text })
 
     const run: Run = {}
     let progress = ''
     let stderr = ''
     let code: number | null = null
+    let model = 'codex'
     if (request) {
       const options = optionsOf(request.opening)
-      const label = labelOf(await codexConfig($), options)
+      const asked = request.texts
+      const config = await codexConfig($)
+      model = options.model ?? config.model ?? model
+      const label = labelOf(config, options)
       const header = `codex ${label} · ${sandbox}\n`
       progress += header
       yield shown(header)
       const child = $.process.spawn({
         argv: argvOf(sandbox, request.sessionId, options),
         cwd: await $.session.cwd(),
-        input: request.sessionId ? request.prompt : options.prompt,
+        input: request.sessionId ? request.prompt : optionsOf(request.prompt).prompt,
       })
       let buffer = ''
       try {
@@ -141,29 +148,33 @@ export const register: Register = on => {
       } catch (err) {
         if (progress !== header) throw err
         run.error = `the codex CLI did not start (${String(err)}). Install it with \`npm install -g @openai/codex\`, run \`codex login\`, and make sure \`codex\` is on the PATH Claude Code starts with.`
+      } finally {
+        await update($, sent, all => ({ ...all, [agentId]: [...(all[agentId] ?? []), ...asked] }))
       }
     }
 
+    // Codex's own token counts, so the agent's row shows what the run cost.
+    const usage: TurnUsage | null = run.usage ? { ...run.usage, model } : null
     const message = request ? handbackOf(run, code, stderr) : (lastReport(rows) ?? 'codex: no new request to run.')
     if (!handback) {
       // The session line lets a follow-up resume this run (see requestOf).
       const text = run.sessionId ? `${message}\n\ncodex session ${run.sessionId}` : message
       yield { kind: 'text', index: 1, text }
-      yield { kind: 'stop', stopReason: 'end_turn', usage: null }
-      return { turnId: e.turnId, index: e.index, answer: text, toolUses: [], stopReason: 'end_turn', usage: null }
+      yield { kind: 'stop', stopReason: 'end_turn', usage }
+      return { turnId: e.turnId, index: e.index, answer: text, toolUses: [], stopReason: 'end_turn', usage }
     }
     if (progress === '') yield shown(run.error ? `codex: ${run.error}\n` : 'codex: nothing to run.\n')
     const input = { message }
     yield { kind: 'tool', index: 1, id: `toolu_codex_${crypto.randomUUID().replaceAll('-', '')}`, name: HANDBACK }
     yield { kind: 'input', index: 1, json: JSON.stringify(input) }
-    yield { kind: 'stop', stopReason: 'tool_use', usage: null }
+    yield { kind: 'stop', stopReason: 'tool_use', usage }
     return {
       turnId: e.turnId,
       index: e.index,
       answer: progress,
       toolUses: [{ name: HANDBACK, input }],
       stopReason: 'tool_use',
-      usage: null,
+      usage,
     }
   })
 }
