@@ -4,6 +4,12 @@ Images in the terminal. When Claude makes, downloads, captures or finds an
 image you should look at, it shows it to you inline, under its tool call,
 without you opening a browser or your phone.
 
+In Ghostty or kitty it is the real picture:
+
+![Claude showing an image in Ghostty as a real picture](media/ghostty-picture.png)
+
+In other terminals it is a colored-block preview:
+
 ![Claude showing an image in a 256-color terminal as a colored-block preview](media/blocky-preview.png)
 
 ## What you see depends on your terminal
