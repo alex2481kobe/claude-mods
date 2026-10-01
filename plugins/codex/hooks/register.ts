@@ -1,4 +1,3 @@
-import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import { apply, lines, type Run } from './events'
@@ -52,21 +51,6 @@ const CHOOSING = (models: string[]) =>
   (models.length > 0 ? ` (models: ${models.join(', ')})` : '') +
   `; left out, Codex uses its own config.`
 
-// What each running codex agent is doing: drawn as its spinner's message and,
-// for all of them together, as this plugin's status line entry.
-const activity = atom({ plugin: 'codex', key: 'activity' } as const, {})
-
-async function show($: EngineInterface, agentId: string, label: string, doing: string | undefined): Promise<void> {
-  await update($, activity, all => {
-    const next = { ...all }
-    if (doing) next[agentId] = { label, doing }
-    else delete next[agentId]
-    return next
-  })
-  const running = Object.values(await read($, activity))
-  $.ui.status(running.length > 0 ? running.map(r => `codex ${r.label}: ${r.doing}`).join(' · ') : undefined)
-}
-
 function handbackOf(run: Run, code: number | null, stderr: string): string {
   if (run.answer && !run.error && code === 0) return run.answer
   const why = run.error ?? (stderr.trim().split('\n').slice(-5).join('\n') || `exit ${code}`)
@@ -95,12 +79,7 @@ export const register: Register = on => {
   on('agent.spawn', async ($, e, next) => {
     if (!(e.subagentType in SANDBOX)) return next(e)
     const label = labelOf(await codexConfig($), optionsOf(e.prompt))
-    return next({ ...e, description: `${e.description} · codex ${label}` })
-  })
-
-  on('ui.render', { component: 'Spinner' }, async ($, e, next) => {
-    const running = (await read($, activity))[e.requestId]
-    return running ? next({ ...e, props: { ...e.props, message: running.doing } }) : next(e)
+    return next({ ...e, description: `${e.description} · ${label}` })
   })
 
   on('turn.step', async function* ($, e, next) {
@@ -130,9 +109,7 @@ export const register: Register = on => {
         input: request.sessionId ? request.prompt : options.prompt,
       })
       let buffer = ''
-      let doing: string | undefined
       try {
-        await show($, agentId, label, 'Starting')
         for await (const chunk of child) {
           if (chunk.stream === 'stderr') {
             stderr = (stderr + chunk.text).slice(-4000)
@@ -142,10 +119,6 @@ export const register: Register = on => {
           buffer = split.rest
           for (const line of split.done) {
             const shown = apply(run, line)
-            if (run.doing !== doing) {
-              doing = run.doing
-              await show($, agentId, label, doing)
-            }
             if (shown === undefined) continue
             progress += shown
             yield { kind: 'text', index: 0, text: shown }
@@ -162,8 +135,6 @@ export const register: Register = on => {
       } catch (err) {
         if (progress !== header) throw err
         run.error = `the codex CLI did not start (${String(err)}). Install it with \`npm install -g @openai/codex\`, run \`codex login\`, and make sure \`codex\` is on the PATH Claude Code starts with.`
-      } finally {
-        await show($, agentId, label, undefined)
       }
     }
 

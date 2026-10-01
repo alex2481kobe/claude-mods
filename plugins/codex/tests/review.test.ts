@@ -25,14 +25,6 @@ describe('events', () => {
     expect(run.error).toBeUndefined()
     expect(run.answer).toBe('ok')
   })
-
-  test('activity follows what Codex is doing', () => {
-    const run: Run = {}
-    apply(run, JSON.stringify({ type: 'turn.started' }))
-    expect(run.doing).toBe('Thinking')
-    apply(run, JSON.stringify({ type: 'item.started', item: { type: 'command_execution', command: "/bin/zsh -lc 'npm test'" } }))
-    expect(run.doing).toBe('Running npm test')
-  })
 })
 
 describe('requestOf', () => {

@@ -13,6 +13,5 @@
     "codex",
     "subagent",
     "mod"
-  ],
-  "types": "./types/index.d.ts"
+  ]
 }

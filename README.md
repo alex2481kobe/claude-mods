@@ -10,9 +10,9 @@ Claude starts Codex with the Agent tool, the same way it starts any other
 subagent. Codex shows up in the task list, runs in the background, and its
 answer comes back to Claude. You can message it to follow up. No Claude model
 runs inside the agent: the mod runs `codex exec` in its place and streams what
-Codex does into the agent's transcript, and the agent's spinner and the status
-line say what Codex is doing right now. (A small Claude model stands in only if
-the mod itself fails, to report that failure.)
+Codex does into the agent's transcript, so the agent list shows what Codex is
+doing right now. (A small Claude model stands in only if the mod itself fails,
+to report that failure.)
 
 | Agent type    | Codex sandbox     | Use it for                                  |
 | ------------- | ----------------- | ------------------------------------------- |
@@ -57,7 +57,7 @@ Ask Claude for it by name:
 
 Codex cannot see your conversation with Claude, so Claude passes it a
 self-contained prompt. Codex uses your own Codex login, model and config; the
-agent's label and transcript show the model your `config.toml` names.
+agent's row in the agent list shows its model and effort, like `Sol 6.1 (xhigh)`.
 
 ### How it works
 
@@ -100,16 +100,6 @@ ask in plain words: "have Codex review this on gpt-6-astra and gpt-6.1-sol".
 claude plugin validate plugins/codex
 claude plugin test plugins/codex
 claude --plugin-dir plugins/codex
-```
-
-## agent-models
-
-A band above the prompt that lists each subagent with the model and effort its
-requests actually go out with, instead of only its agent type. Codex agents
-show their Codex model.
-
-```
-/plugin install agent-models@claude-mods
 ```
 
 ## License
