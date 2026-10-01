@@ -65,8 +65,10 @@ Any format macOS opens works: PNG, JPEG, HEIC, GIF, TIFF, BMP.
   `prompt.compose` hook also adds a short section to the system prompt: to let
   you see an image, call `show`. Reading an image shows it only to Claude.
 - In kitty or Ghostty (`TERM_PROGRAM=ghostty`, or `KITTY_WINDOW_ID` set) the
-  picture is an `Image` element over the original PNG; another format is
-  converted to a PNG first. The terminal reads the file itself.
+  picture is an `Image` element over a PNG copy of the image in
+  `$TMPDIR/peek/`. The terminal reads that file itself at every redraw, and
+  Claude Code refuses a file on a network or device path, so the copy keeps the
+  picture working when the original moves or lives on a mounted volume.
 - Elsewhere `sips` scales the image and writes an uncompressed BMP, which peek
   decodes, fits to the 256-color palette (nearest in CIE Lab, then
   Floyd-Steinberg at a quarter strength) and draws as a `Raster` of half
@@ -86,11 +88,12 @@ leaves in this palette.
 - Pictures are drawn in the terminal only; the desktop and mobile apps show
   the tool row without the image.
 - In tmux the block preview is used even inside Ghostty or kitty.
-- A converted PNG is kept in `$TMPDIR/peek/` for the session, since the
-  terminal reads it at every redraw.
+- In kitty and Ghostty each shown image leaves a PNG copy in `$TMPDIR/peek/`,
+  which macOS clears with the rest of the temporary folder.
 - macOS only.
 - Tried live in Apple Terminal (macOS 15), in a 256-color tmux pane, and in
-  Ghostty 1.3.1.
+  Ghostty 1.3.1: PNG, JPEG, HEIC, a 6000x4000 PNG (under half a second), a
+  transparent PNG, and 20 images in one session.
 
 ## Develop
 
