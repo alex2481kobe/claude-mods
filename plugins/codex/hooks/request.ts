@@ -12,6 +12,16 @@ function isEngineText(text: string): boolean {
   return text.startsWith('<system-reminder>') || text.startsWith('[handback')
 }
 
+// A message sent to a running agent arrives wrapped in the engine's words
+// ("… sent a message while you were working: <it> Address this before
+// completing your current task."). That is an instruction to a Claude
+// subagent; Codex gets the message as it was sent.
+const WRAPPED = /^[^\n]*sent a message while you were working:\n([\s\S]*?)\n\nAddress this before completing your current task\.?$/
+
+export function sentAs(text: string): string {
+  return WRAPPED.exec(text.trim())?.[1] ?? text
+}
+
 // One turn of the conversation: its words, and its tool calls with whether
 // each failed.
 export type Row = {
@@ -78,7 +88,9 @@ export function requestOf(rows: readonly Row[], sent: readonly string[]): Reques
   for (const row of rows) {
     if (row.role === 'assistant') sessionId = SESSION.exec(row.text)?.[1] ?? sessionId
   }
-  return { prompt: texts.join('\n\n'), opening, texts, sessionId: sent.length > 0 ? sessionId : undefined }
+  // The engine may place one message twice, wrapped and as sent: once each.
+  const said = texts.map(sentAs).filter((text, i, all) => all.indexOf(text) === i)
+  return { prompt: said.join('\n\n'), opening, texts, sessionId: sent.length > 0 ? sessionId : undefined }
 }
 
 // Whether this loop reports through a SubagentHandback call. An interactive
@@ -99,4 +111,13 @@ export function lastReport(rows: readonly Row[]): string | undefined {
     }
   }
   return report
+}
+
+// What the agent last reported: its last turn's handback, or its text where
+// the loop reports as text (headless).
+export function lastAnswer(rows: readonly Row[]): string | undefined {
+  const row = rows.findLast(r => r.role === 'assistant')
+  if (!row) return undefined
+  const use = row.toolUses.findLast(u => u.tool === HANDBACK && typeof u.input.message === 'string')
+  return use ? (use.input.message as string) : row.text
 }

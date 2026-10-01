@@ -2,18 +2,18 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { apply, lines, type Run } from '../hooks/events'
 
-const SESSION = '01a0f8f0-0000-7000-8000-000000000000'
+const THREAD = '01a0f943-da7f-76c1-acf4-46885543b001'
 
-// Shapes as `codex exec --json` (codex-cli 0.159) prints them.
-const EVENTS = [
-  { type: 'thread.started', thread_id: SESSION },
-  { type: 'turn.started' },
-  { type: 'item.completed', item: { id: 'item_0', type: 'agent_message', text: 'Reading go.mod.\n' } },
-  { type: 'item.started', item: { id: 'item_1', type: 'command_execution', command: "zsh -lc 'cat go.mod'", exit_code: null } },
-  { type: 'item.completed', item: { id: 'item_1', type: 'command_execution', command: "zsh -lc 'cat go.mod'", exit_code: 0 } },
-  { type: 'item.completed', item: { id: 'item_2', type: 'agent_message', text: 'example.com/m go 1.26' } },
-  { type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 1 } },
-].map(e => JSON.stringify(e))
+// Notifications as `codex app-server` (codex-cli 0.159) sends them, cut to the
+// fields the mod reads.
+const NOTES: [string, object][] = [
+  ['turn/started', { threadId: THREAD, turn: { id: 't1', status: 'inProgress' } }],
+  ['item/completed', { threadId: THREAD, item: { type: 'agentMessage', text: 'Reading go.mod.\n' } }],
+  ['item/started', { threadId: THREAD, item: { type: 'commandExecution', command: "/bin/zsh -lc 'cat go.mod'", exitCode: null } }],
+  ['item/completed', { threadId: THREAD, item: { type: 'commandExecution', command: "/bin/zsh -lc 'cat go.mod'", exitCode: 0 } }],
+  ['item/completed', { threadId: THREAD, item: { type: 'agentMessage', text: 'example.com/m go 1.26' } }],
+  ['turn/completed', { threadId: THREAD, turn: { id: 't1', status: 'completed', error: null } }],
+]
 
 describe('events', () => {
   test('lines keeps a line split across chunks whole', () => {
@@ -24,19 +24,29 @@ describe('events', () => {
     expect(b.rest).toBe('')
   })
 
-  test('a run yields the session, commands and messages, and answers with the last message', () => {
-    const run: Run = {}
-    const shown = EVENTS.map(line => apply(run, line)).filter(Boolean).join('')
-    expect(run.sessionId).toBe(SESSION)
+  test('a turn yields commands and messages, and answers with the last message', () => {
+    const run: Run = { threadId: THREAD }
+    const shown = NOTES.map(([method, params]) => apply(run, method, params)).filter(Boolean).join('')
     expect(run.answer).toBe('example.com/m go 1.26')
-    expect(shown).toContain(`codex session ${SESSION}`)
+    expect(run.isDone).toBe(true)
+    expect(run.error).toBeUndefined()
     expect(shown).toContain('$ cat go.mod')
     expect(shown).not.toContain('exit 0')
   })
 
-  test('a failed turn records the error', () => {
-    const run: Run = {}
-    apply(run, JSON.stringify({ type: 'turn.failed', error: { message: 'quota' } }))
+  test('a failed turn records its error', () => {
+    const run: Run = { threadId: THREAD }
+    apply(run, 'turn/completed', { threadId: THREAD, turn: { status: 'failed', error: { message: 'quota' } } })
     expect(run.error).toBe('quota')
+  })
+
+  test('another thread is not this run', () => {
+    const run: Run = { threadId: THREAD }
+    expect(apply(run, 'item/completed', { threadId: 'other', item: { type: 'agentMessage', text: 'x' } })).toBeUndefined()
+    expect(run.answer).toBeUndefined()
+  })
+
+  test('the automatic reviewer is shown', () => {
+    expect(apply({}, 'guardianWarning', { message: 'approved (risk: low)' })).toBe('auto review: approved (risk: low)\n')
   })
 })
