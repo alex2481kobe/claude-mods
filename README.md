@@ -76,12 +76,37 @@ Codex.
 - Tested on macOS. Linux should behave the same; Windows is untested.
 - The mods API is early access and may change between Claude Code releases.
 
+### Choosing a model
+
+The Agent tool's own `model` option names Claude models, so a Codex model is
+chosen in the prompt instead. Claude starts it with a `model:` and/or `effort:`
+line, which the mod passes to Codex and removes from the task:
+
+```
+model: gpt-6-astra
+effort: high
+Review app.js for bugs and report back.
+```
+
+The agent types' descriptions list the models your Codex knows, so you can
+ask in plain words: "have Codex review this on gpt-6-astra and gpt-6.1-sol".
+
 ### Develop
 
 ```sh
 claude plugin validate plugins/codex
 claude plugin test plugins/codex
 claude --plugin-dir plugins/codex
+```
+
+## agent-models
+
+A band above the prompt that lists each subagent with the model and effort its
+requests actually go out with, instead of only its agent type. Codex agents
+show their Codex model.
+
+```
+/plugin install agent-models@claude-mods
 ```
 
 ## License
