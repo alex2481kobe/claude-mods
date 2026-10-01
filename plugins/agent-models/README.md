@@ -2,6 +2,8 @@
 
 Each Claude subagent's model and effort in Claude Code's agent list.
 
+![Two Claude subagents in the agent list, labelled Opus 5.5 (high) and Haiku](media/agent-list.png)
+
 Claude Code's agent list shows a subagent's task but not what it runs on. With
 this mod each row carries it, the way the codex mod's rows do:
 
