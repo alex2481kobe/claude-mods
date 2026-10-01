@@ -1,9 +1,9 @@
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, TurnStepChunk } from 'claude-code'
 
 import { apply, lines, type Run } from './events'
 import { configOf, labelOf, modelsOf, type Choice } from './model'
 import { optionsOf, overridesOf, type Options } from './options'
-import { HANDBACK, requestOf } from './request'
+import { HANDBACK, handsBack, lastReport, requestOf } from './request'
 
 // Codex as native subagent types. The Agent tool starts one like any other
 // subagent (task list, background, SendMessage); a turn.step hook answers its
@@ -18,7 +18,7 @@ const SANDBOX: Record<string, string> = {
 
 // Only reached if the turn.step hook fails, so the failure is not mistaken
 // for an answer.
-const FALLBACK = `You stand in for Codex, which failed to start. Call ${HANDBACK} once with the message "codex mod: the run failed to start; see this agent's transcript and the debug log." Do nothing else.`
+const FALLBACK = `You stand in for Codex, which failed to start. Report exactly "codex mod: the run failed to start; see this agent's transcript and the debug log." as your final report, and do nothing else.`
 
 function argvOf(sandbox: string, sessionId: string | undefined, options: Options): string[] {
   // Headless: nobody can approve an escalation, and none may widen the sandbox.
@@ -92,6 +92,12 @@ export const register: Register = on => {
     const rows = await $.session.messages({ agentId })
     if ('deny' in rows) throw new Error(rows.deny)
     const request = requestOf(rows)
+    // Where the loop reports with a handback call, Codex's progress is the
+    // transcript's text; where its final text is the report, the progress is
+    // shown live as thinking, which the transcript does not keep.
+    const handback = handsBack(rows)
+    const shown = (text: string): TurnStepChunk =>
+      handback ? { kind: 'text', index: 0, text } : { kind: 'thinking', index: 0, text }
 
     const run: Run = {}
     let progress = ''
@@ -102,7 +108,7 @@ export const register: Register = on => {
       const label = labelOf(await codexConfig($), options)
       const header = `codex ${label} · ${sandbox}\n`
       progress += header
-      yield { kind: 'text', index: 0, text: header }
+      yield shown(header)
       const child = $.process.spawn({
         argv: argvOf(sandbox, request.sessionId, options),
         cwd: await $.session.cwd(),
@@ -118,17 +124,17 @@ export const register: Register = on => {
           const split = lines(buffer, chunk.text)
           buffer = split.rest
           for (const line of split.done) {
-            const shown = apply(run, line)
-            if (shown === undefined) continue
-            progress += shown
-            yield { kind: 'text', index: 0, text: shown }
+            const step = apply(run, line)
+            if (step === undefined) continue
+            progress += step
+            yield shown(step)
           }
         }
         if (buffer.trim() !== '') {
-          const shown = apply(run, buffer)
-          if (shown !== undefined) {
-            progress += shown
-            yield { kind: 'text', index: 0, text: shown }
+          const step = apply(run, buffer)
+          if (step !== undefined) {
+            progress += step
+            yield shown(step)
           }
         }
         code = (await child.result).code
@@ -138,8 +144,15 @@ export const register: Register = on => {
       }
     }
 
-    const message = request ? handbackOf(run, code, stderr) : 'codex: no new request to run.'
-    if (progress === '') yield { kind: 'text', index: 0, text: run.error ? `codex: ${run.error}\n` : 'codex: nothing to run.\n' }
+    const message = request ? handbackOf(run, code, stderr) : (lastReport(rows) ?? 'codex: no new request to run.')
+    if (!handback) {
+      // The session line lets a follow-up resume this run (see requestOf).
+      const text = run.sessionId ? `${message}\n\ncodex session ${run.sessionId}` : message
+      yield { kind: 'text', index: 1, text }
+      yield { kind: 'stop', stopReason: 'end_turn', usage: null }
+      return { turnId: e.turnId, index: e.index, answer: text, toolUses: [], stopReason: 'end_turn', usage: null }
+    }
+    if (progress === '') yield shown(run.error ? `codex: ${run.error}\n` : 'codex: nothing to run.\n')
     const input = { message }
     yield { kind: 'tool', index: 1, id: `toolu_codex_${crypto.randomUUID().replaceAll('-', '')}`, name: HANDBACK }
     yield { kind: 'input', index: 1, json: JSON.stringify(input) }

@@ -20,19 +20,16 @@ export function requestOf(rows: readonly SessionMessage[]): Request | undefined 
   const first = rows.find(r => r.role === 'user' && r.text !== '' && !isEngineRow(r.text))
   if (!first) return undefined
 
-  // A run ends at the assistant row that names its session or hands back,
-  // whether it finished or was stopped part way.
+  // Every assistant row is a run's, whether it finished or was stopped part
+  // way; what the caller sends after the last one is the next request.
   let sessionId: string | undefined
   let hasRun = false
   let followUps: string[] = []
   for (const row of rows) {
     if (row.role === 'assistant') {
-      const named = SESSION.exec(row.text)?.[1]
-      if (named || row.toolUses.some(u => u.tool === HANDBACK)) {
-        sessionId = named ?? sessionId
-        hasRun = true
-        followUps = []
-      }
+      sessionId = SESSION.exec(row.text)?.[1] ?? sessionId
+      hasRun = true
+      followUps = []
     } else if (hasRun && row.text !== '' && !isEngineRow(row.text) && !row.toolResults?.length) {
       followUps.push(row.text)
     }
@@ -41,4 +38,25 @@ export function requestOf(rows: readonly SessionMessage[]): Request | undefined 
   if (!hasRun) return { prompt: first.text, opening: first.text }
   if (followUps.length === 0) return undefined
   return { prompt: followUps.join('\n\n'), opening: first.text, sessionId }
+}
+
+// Whether this loop reports through a SubagentHandback call: the engine says
+// so in a reminder where it has the tool (an interactive session), and says
+// nothing where a subagent's final text is its report (headless, SDK).
+export function handsBack(rows: readonly SessionMessage[]): boolean {
+  const told = rows.some(r => r.role === 'user' && r.text.includes(`${HANDBACK}(`))
+  const failed = rows.some(r => r.toolUses.some(u => u.tool === HANDBACK && u.isError))
+  return told && !failed
+}
+
+// The report of the last handback the loop sent, to repeat it as text when
+// the call failed.
+export function lastReport(rows: readonly SessionMessage[]): string | undefined {
+  let report: string | undefined
+  for (const row of rows) {
+    for (const use of row.toolUses) {
+      if (use.tool === HANDBACK && typeof use.input.message === 'string') report = use.input.message
+    }
+  }
+  return report
 }
