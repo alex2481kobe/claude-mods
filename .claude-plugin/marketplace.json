@@ -15,6 +15,11 @@
       "name": "agent-models",
       "source": "./plugins/agent-models",
       "description": "Each Claude subagent's model and effort in the agent list"
+    },
+    {
+      "name": "peek",
+      "source": "./plugins/peek",
+      "description": "Images in the terminal: real pixels in kitty and Ghostty, a colored-block preview elsewhere"
     }
   ]
 }

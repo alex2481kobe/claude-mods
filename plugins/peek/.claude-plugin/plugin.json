@@ -1,0 +1,18 @@
+{
+  "name": "peek",
+  "version": "0.1.0",
+  "description": "Images in the terminal: Claude shows the pictures it makes or finds inline, as real pixels in kitty and Ghostty and as a colored-block preview elsewhere",
+  "author": {
+    "name": "alex2481kobe",
+    "url": "https://github.com/alex2481kobe"
+  },
+  "homepage": "https://github.com/alex2481kobe/claude-mods",
+  "repository": "https://github.com/alex2481kobe/claude-mods",
+  "license": "Apache-2.0",
+  "keywords": [
+    "image",
+    "terminal",
+    "mod"
+  ],
+  "types": "./types/index.d.ts"
+}
