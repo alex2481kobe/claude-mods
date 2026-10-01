@@ -92,12 +92,10 @@ export const register: Register = on => {
     const rows = await $.session.messages({ agentId })
     if ('deny' in rows) throw new Error(rows.deny)
     const request = requestOf(rows)
-    // Where the loop reports with a handback call, Codex's progress is the
-    // transcript's text; where its final text is the report, the progress is
-    // shown live as thinking, which the transcript does not keep.
+    // Codex's progress is the transcript's text; the report goes back with a
+    // handback call, or as the final text where the loop has no such tool.
     const handback = handsBack(rows)
-    const shown = (text: string): TurnStepChunk =>
-      handback ? { kind: 'text', index: 0, text } : { kind: 'thinking', index: 0, text }
+    const shown = (text: string): TurnStepChunk => ({ kind: 'text', index: 0, text })
 
     const run: Run = {}
     let progress = ''

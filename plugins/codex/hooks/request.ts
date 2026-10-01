@@ -40,13 +40,12 @@ export function requestOf(rows: readonly SessionMessage[]): Request | undefined 
   return { prompt: followUps.join('\n\n'), opening: first.text, sessionId }
 }
 
-// Whether this loop reports through a SubagentHandback call: the engine says
-// so in a reminder where it has the tool (an interactive session), and says
-// nothing where a subagent's final text is its report (headless, SDK).
+// Whether this loop reports through a SubagentHandback call. An interactive
+// session gives subagents the tool and insists on it; a headless or SDK run
+// has none and takes the final text as the report. Nothing the loop can read
+// says which ahead of time, so it hands back until a handback has failed.
 export function handsBack(rows: readonly SessionMessage[]): boolean {
-  const told = rows.some(r => r.role === 'user' && r.text.includes(`${HANDBACK}(`))
-  const failed = rows.some(r => r.toolUses.some(u => u.tool === HANDBACK && u.isError))
-  return told && !failed
+  return !rows.some(r => r.toolUses.some(u => u.tool === HANDBACK && u.isError))
 }
 
 // The report of the last handback the loop sent, to repeat it as text when

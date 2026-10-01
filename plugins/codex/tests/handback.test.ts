@@ -13,12 +13,9 @@ const handedBack = (isError?: true): SessionMessage => ({
 })
 
 describe('reporting', () => {
-  test('a loop the engine tells to hand back hands back', () => {
+  test('a loop hands back by default, whether or not a reminder is visible', () => {
     expect(handsBack([user('task'), reminder])).toBe(true)
-  })
-
-  test('a headless loop, never told, reports as text', () => {
-    expect(handsBack([user('task')])).toBe(false)
+    expect(handsBack([user('task')])).toBe(true)
   })
 
   test('a handback that failed for want of the tool switches to text and keeps the report', () => {
