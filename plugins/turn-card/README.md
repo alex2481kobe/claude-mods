@@ -19,6 +19,9 @@ color, so it reads cleanly over the text beneath it.
 - The fullscreen terminal layout (`"tui": "fullscreen"`), where the pointer
   reaches the transcript. Elsewhere the mod records turns but draws nothing.
 
+Tried live on: the terminal in its fullscreen layout. Not yet tried: the
+terminal's inline layout and the desktop app.
+
 ## Install
 
 ```

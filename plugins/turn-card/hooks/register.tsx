@@ -10,7 +10,7 @@ const current = atom({ plugin: 'turn-card', key: 'current' } as const, null)
 
 // A no-break space: drawn as a blank cell that overwrites what is under the
 // card, so the card is solid in the terminal's own background color.
-const BLANK = ' '
+const BLANK = '\u00a0'
 
 const cardLines = (stats: TurnStats): string[] => {
   const lines = [
