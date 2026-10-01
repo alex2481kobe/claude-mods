@@ -1,0 +1,4 @@
+# Laid beside a mod by Claude Code when it loads one from disk
+plugins/*/.claude-plugin/types/
+plugins/*/tsconfig.json
+.DS_Store

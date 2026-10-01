@@ -1,0 +1,15 @@
+{
+  "name": "claude-mods",
+  "description": "Mods for Claude Code",
+  "owner": {
+    "name": "alex2481kobe",
+    "url": "https://github.com/alex2481kobe"
+  },
+  "plugins": [
+    {
+      "name": "codex",
+      "source": "./plugins/codex",
+      "description": "OpenAI Codex as native Claude Code subagents"
+    }
+  ]
+}
