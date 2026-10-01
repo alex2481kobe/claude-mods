@@ -1,0 +1,17 @@
+{
+  "name": "agent-models",
+  "version": "0.1.0",
+  "description": "Each Claude subagent's model and effort in the native agent list, beside its task",
+  "author": {
+    "name": "alex2481kobe",
+    "url": "https://github.com/alex2481kobe"
+  },
+  "homepage": "https://github.com/alex2481kobe/claude-mods",
+  "repository": "https://github.com/alex2481kobe/claude-mods",
+  "license": "Apache-2.0",
+  "keywords": [
+    "subagent",
+    "model",
+    "mod"
+  ]
+}

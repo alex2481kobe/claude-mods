@@ -9,6 +9,8 @@ subagent, and Codex behaves like one:
 
 - it shows in the agent list with its model and effort (`· Sol 6.1 (xhigh)`),
   its running time and token count, and clears when it finishes
+- its row's activity line updates as Codex works, and Enter opens its view,
+  where Codex's steps appear live and you can message it
 - it runs in the background, and its report comes back to Claude
 - you can message it, while it runs (`· 2 queued`) or after it finishes; each
   message resumes the same Codex session
@@ -128,8 +130,9 @@ Create note.txt containing hi.
 - When a `codex:*` agent's loop asks its model for a response, the mod answers
   instead: it starts `codex app-server` with the agent's flags as config
   overrides, starts or resumes the Codex session in the session's working
-  directory, streams Codex's messages and commands into the agent's
-  transcript, and reports Codex's token usage on the agent's row.
+  directory, appends Codex's messages and commands to the agent's
+  conversation as they happen, and reports Codex's token usage on the agent's
+  row.
 - A mod's process takes its input once, so the mod writes to `codex app-server`
   through a named pipe in a private temporary folder, which goes when the
   process does.

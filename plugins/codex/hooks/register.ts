@@ -57,6 +57,16 @@ const sent = atom({ plugin: 'codex', key: 'sent' } as const, {})
 
 const shown = (text: string): TurnStepChunk => ({ kind: 'text', index: 0, text })
 
+// Codex's progress as notices in the agent's conversation, appended as it
+// happens: the agent's view shows them live, and the agent list's activity
+// line follows them as it follows a native agent's steps. The model never
+// reads a notice. Display only, so a refused append changes nothing else.
+async function note($: EngineInterface, agentId: string, text: string): Promise<void> {
+  await $.session
+    .append({ agentId, message: { type: 'system', content: [{ type: 'text', text: text.trimEnd() }] } })
+    .catch(() => undefined)
+}
+
 // Resolves undefined when the step is aborted first.
 function unlessAborted<T>(signal: AbortSignal, promise: Promise<T>): Promise<T | undefined> {
   if (signal.aborted) return Promise.resolve(undefined)
@@ -130,9 +140,15 @@ export const register: Register = on => {
     let question: string | undefined
     let model = 'codex'
     let server: Server | undefined
+    // The header and the session line are the agent's own text (a follow-up
+    // resumes the session it names); the rest of Codex's progress is noted.
     const show = (text: string) => {
       progress += text
       return shown(text)
+    }
+    const tell = (text: string) => {
+      progress += text
+      return note($, agentId, text)
     }
     if (request) {
       const pending = held.get(agentId)
@@ -147,7 +163,7 @@ export const register: Register = on => {
           server = pending.server
           run.threadId = pending.threadId
           await server.respond(pending.asked.id, reply)
-          yield show(`answered Codex\n`)
+          await tell(`answered Codex\n`)
         } else {
           // The spawn prompt's flags hold for every run of the agent; they are
           // not part of the task.
@@ -184,7 +200,7 @@ export const register: Register = on => {
             continue
           }
           const step = apply(run, message.method, message.params)
-          if (step !== undefined) yield show(step)
+          if (step !== undefined) await tell(step)
           if (run.isDone) break
         }
       } catch (err) {

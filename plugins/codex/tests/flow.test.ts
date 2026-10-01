@@ -94,6 +94,10 @@ describe('a codex agent', () => {
 
     const asked = await step($, 0)
     expect(asked.report).toContain("Codex asks to run:\n  printf hi > note.txt")
+    // The agent's own text is the header and the session line; the rest of
+    // Codex's progress is appended as notices as it happens (the test runner
+    // stores no appended row, so only what is not yielded is checked here).
+    expect(asked.text).toBe('codex Luna 6 · Codex\ncodex session th1\n\n')
     expect(fake.argv).toContain('approvals_reviewer="user"')
     expect(fake.isClosed).toBe(false)
 
@@ -111,6 +115,7 @@ describe('a codex agent', () => {
     const done = await step($, 1)
     expect(fake.decisions).toEqual(['accept'])
     expect(done.report).toBe('Created note.txt.')
+    expect(done.text).toBe('')
     await new Promise<void>(resolve => setTimeout(() => resolve(), 20))
     expect(fake.isClosed).toBe(true)
   })

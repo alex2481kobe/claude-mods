@@ -10,6 +10,11 @@
       "name": "codex",
       "source": "./plugins/codex",
       "description": "OpenAI Codex as native Claude Code subagents"
+    },
+    {
+      "name": "agent-models",
+      "source": "./plugins/agent-models",
+      "description": "Each Claude subagent's model and effort in the agent list"
     }
   ]
 }
