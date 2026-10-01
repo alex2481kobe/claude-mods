@@ -1,4 +1,4 @@
-import type { EngineInterface, Register, TurnStepChunk } from 'claude-code'
+import type { EngineInterface, Register, TurnStepChunk, TurnUsage } from 'claude-code'
 
 import { apply, lines, type Run } from './events'
 import { configOf, labelOf, modelsOf, type Choice } from './model'
@@ -101,9 +101,12 @@ export const register: Register = on => {
     let progress = ''
     let stderr = ''
     let code: number | null = null
+    let model = 'codex'
     if (request) {
       const options = optionsOf(request.opening)
-      const label = labelOf(await codexConfig($), options)
+      const config = await codexConfig($)
+      model = options.model ?? config.model ?? model
+      const label = labelOf(config, options)
       const header = `codex ${label} · ${sandbox}\n`
       progress += header
       yield shown(header)
@@ -142,26 +145,28 @@ export const register: Register = on => {
       }
     }
 
+    // Codex's own token counts, so the agent's row shows what the run cost.
+    const usage: TurnUsage | null = run.usage ? { ...run.usage, model } : null
     const message = request ? handbackOf(run, code, stderr) : (lastReport(rows) ?? 'codex: no new request to run.')
     if (!handback) {
       // The session line lets a follow-up resume this run (see requestOf).
       const text = run.sessionId ? `${message}\n\ncodex session ${run.sessionId}` : message
       yield { kind: 'text', index: 1, text }
-      yield { kind: 'stop', stopReason: 'end_turn', usage: null }
-      return { turnId: e.turnId, index: e.index, answer: text, toolUses: [], stopReason: 'end_turn', usage: null }
+      yield { kind: 'stop', stopReason: 'end_turn', usage }
+      return { turnId: e.turnId, index: e.index, answer: text, toolUses: [], stopReason: 'end_turn', usage }
     }
     if (progress === '') yield shown(run.error ? `codex: ${run.error}\n` : 'codex: nothing to run.\n')
     const input = { message }
     yield { kind: 'tool', index: 1, id: `toolu_codex_${crypto.randomUUID().replaceAll('-', '')}`, name: HANDBACK }
     yield { kind: 'input', index: 1, json: JSON.stringify(input) }
-    yield { kind: 'stop', stopReason: 'tool_use', usage: null }
+    yield { kind: 'stop', stopReason: 'tool_use', usage }
     return {
       turnId: e.turnId,
       index: e.index,
       answer: progress,
       toolUses: [{ name: HANDBACK, input }],
       stopReason: 'tool_use',
-      usage: null,
+      usage,
     }
   })
 }

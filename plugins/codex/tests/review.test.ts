@@ -33,3 +33,11 @@ describe('requestOf', () => {
     expect(requestOf([user('fix x'), stopped, user('continue')])).toEqual({ prompt: 'continue', opening: 'fix x', sessionId: SESSION })
   })
 })
+
+describe('usage', () => {
+  test('a completed turn carries Codex usage in the engine shape, cached tokens apart', () => {
+    const run: Run = {}
+    apply(run, JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1000, cached_input_tokens: 800, output_tokens: 50, reasoning_output_tokens: 0 } }))
+    expect(run.usage).toEqual({ input_tokens: 200, output_tokens: 50, cache_read_input_tokens: 800, cache_creation_input_tokens: 0 })
+  })
+})

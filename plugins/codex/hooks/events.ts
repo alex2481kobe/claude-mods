@@ -1,8 +1,22 @@
 // Reads `codex exec --json` output: one JSON event per line. Each event
 // becomes a line of progress for the agent's transcript, the run's answer is
-// its last agent message.
+// its last agent message, and its usage is what the turn cost.
 
-export type Run = { sessionId?: string; answer?: string; error?: string }
+import type { ModelUsage } from 'claude-code'
+
+export type Run = { sessionId?: string; answer?: string; error?: string; usage?: ModelUsage }
+
+// Codex counts cached tokens inside `input_tokens`; the engine's shape counts
+// them apart, as the Messages API does.
+function usageOf(usage: any): ModelUsage {
+  const cached = Number(usage?.cached_input_tokens) || 0
+  return {
+    input_tokens: Math.max(0, (Number(usage?.input_tokens) || 0) - cached),
+    output_tokens: Number(usage?.output_tokens) || 0,
+    cache_read_input_tokens: cached,
+    cache_creation_input_tokens: Number(usage?.cache_write_input_tokens) || 0,
+  }
+}
 
 // Splits streamed text into complete lines, keeping the unfinished tail.
 export function lines(buffer: string, text: string): { done: string[]; rest: string } {
@@ -43,6 +57,7 @@ export function apply(run: Run, line: string): string | undefined {
       // An `error` event may be a retry Codex recovered from; the turn's
       // completion clears it.
       run.error = undefined
+      run.usage = usageOf(event.usage)
       return undefined
     case 'turn.failed':
     case 'error':
