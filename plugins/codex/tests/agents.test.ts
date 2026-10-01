@@ -1,5 +1,7 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 
+import { specsOf } from '../hooks/agents'
+
 // Codex's files where the mod looks for them, from the environment.
 const FILES: Record<string, string> = {
   '/home/me/.codex/config.toml': 'model = "gpt-6.1-sol"\nmodel_reasoning_effort = "xhigh"\n',
@@ -31,5 +33,18 @@ describe('agent types', () => {
     })
     await $.agent.spawn({ subagentType: 'codex:read', prompt: 'model: gpt-6-astra\nReview app.js', description: 'Review' } as never)
     expect(description).toBe('Review · Astra 6 (xhigh)')
+  })
+
+  // The agent list summarises a running agent from its definition's prompt,
+  // which only a stand-in model would read: it must read as what the agent
+  // does, and still make a stand-in report that Codex did not run.
+  test('the stand-in prompt reads as relaying to Codex, and a stand-in reports that Codex did not run', () => {
+    for (const { prompt } of specsOf([])) {
+      const opening = prompt.split(/(?<=[.:])\s/)[0]!
+      expect(opening).toMatch(/Codex/)
+      expect(opening).not.toMatch(/fail|did not|error|stand/i)
+      expect(prompt).not.toMatch(/failed to start/)
+      expect(prompt).toMatch(/report[^.]*Codex did not run/i)
+    }
   })
 })

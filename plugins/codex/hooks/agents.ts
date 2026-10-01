@@ -11,9 +11,11 @@ export const TYPES: Record<string, { pin?: Pin; shown: string }> = {
   'codex:run': { shown: 'Codex' },
 }
 
-// Only reached if the turn.step hook fails, so the failure is not mistaken
-// for an answer.
-const FALLBACK = `You stand in for Codex, which failed to start. Report exactly "codex mod: the run failed to start; see this agent's transcript and the debug log." as your final report, and do nothing else.`
+// The agent's system prompt, which no model reads while the mod answers its
+// turns. The agent list still summarises a running agent from it, so it opens
+// with what the agent does; a stand-in model, reached only if the turn.step
+// hook fails, reports that instead of answering.
+const FALLBACK = `This agent passes its task to OpenAI Codex, which does the work in its place: the codex mod runs Codex and reports Codex's answer. A model reading this means the mod did not run, so do nothing else and give as your final report that Codex did not run and that this agent's transcript and the debug log say why.`
 
 const CHOOSING = (models: string[]) =>
   ` Codex CLI flags may open the prompt, one per line as \`codex exec --help\` names them without dashes (\`model: <id>\`, \`effort: <level>\`` +
