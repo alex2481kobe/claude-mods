@@ -13,7 +13,7 @@ const efforts = new Map<string, string>()
 // its agent goes unlabelled.
 async function agentDirs($: EngineInterface, provider: string): Promise<string[]> {
   const home = await $.env.get('HOME')
-  const config = (await $.env.get('CLAUDE_CONFIG_DIR')) ?? (home && `${home}/.claude`)
+  const config = (await $.env.get('CLAUDE_CONFIG_DIR')) || (home && `${home}/.claude`)
   const user = config ? [`${config}/agents`] : []
   return provider === 'user' ? user : [`${await $.session.root()}/.claude/agents`, ...user]
 }
