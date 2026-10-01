@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { AgentInfo, On, TurnStepChunk } from 'claude-code'
 
-import { unlessAborted } from '../hooks/register'
+import { unlessAborted } from '../hooks/step'
 import { HANDBACK, type ApiTurn } from '../hooks/request'
 
 // The test runner has timers; the mod's own environment declares none.

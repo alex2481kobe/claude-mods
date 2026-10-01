@@ -37,3 +37,29 @@ export function modelsOf(json: string): string[] {
     return []
   }
 }
+
+// What reading Codex's own files needs of the engine: the environment
+// variables that place them, and a file read.
+export type Files = {
+  env: { CODEX_HOME?: string; HOME?: string; USERPROFILE?: string }
+  read: (path: string) => Promise<string>
+}
+
+async function readOr(files: Files, name: string): Promise<string> {
+  const { CODEX_HOME, HOME, USERPROFILE } = files.env
+  try {
+    return await files.read(`${CODEX_HOME ?? `${HOME ?? USERPROFILE}/.codex`}/${name}`)
+  } catch {
+    return ''
+  }
+}
+
+// The model and effort Codex's config.toml names; empty when it names none.
+export async function codexConfig(files: Files): Promise<Choice> {
+  return configOf(await readOr(files, 'config.toml'))
+}
+
+// The model ids Codex's model cache lists.
+export async function codexModels(files: Files): Promise<string[]> {
+  return modelsOf(await readOr(files, 'models_cache.json'))
+}

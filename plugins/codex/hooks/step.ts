@@ -1,0 +1,190 @@
+import { atom, read, update } from 'claude-code'
+import type { EngineInterface, Hook, TurnStepChunk, TurnUsage } from 'claude-code'
+
+import { TYPES } from './agents'
+import { apply, type Run } from './events'
+import { flagsOf, type Flags } from './flags'
+import { codexConfig, labelOf, type Files } from './model'
+import { expiredAnswer, questionOf, replyOf, type Asked } from './questions'
+import { HANDBACK, handsBack, lastAnswer, lastReport, requestOf, rowsOf } from './request'
+import { NO_CODEX, open, type Server } from './server'
+
+// One step of a codex agent's loop: its model request answered by driving
+// `codex app-server`, Codex's steps streamed as the agent's text, and Codex's
+// answer or question handed back.
+
+// A Codex turn paused on a question, by agent id: the server stays up until
+// the agent's next message answers it.
+const held = new Map<string, { server: Server; asked: Asked; threadId: string }>()
+
+// Ends every Codex turn left waiting on a question.
+export function closeHeld(): void {
+  for (const { server } of held.values()) server.close()
+  held.clear()
+}
+
+// What each codex agent has passed to Codex, so a message is sent once.
+const sent = atom({ plugin: 'codex', key: 'sent' } as const, {})
+
+const shown = (text: string): TurnStepChunk => ({ kind: 'text', index: 0, text })
+
+// Codex's progress also as notices in the agent's conversation, appended as
+// it happens: a notice is what refreshes the agent list's activity line, while
+// the agent's view shows the step's text. The model never reads a notice, and
+// only the detailed transcript (ctrl+o) shows both. Display only, so a refused
+// append changes nothing else.
+async function note($: EngineInterface, agentId: string, text: string): Promise<void> {
+  await $.session
+    .append({ agentId, message: { type: 'system', content: [{ type: 'text', text: text.trimEnd() }] } })
+    .catch(() => undefined)
+}
+
+// Resolves undefined when the step is aborted first; the listener goes once
+// the wait settles, so a long turn does not pile them up on the signal.
+export function unlessAborted<T>(signal: AbortSignal, promise: Promise<T>): Promise<T | undefined> {
+  if (signal.aborted) return Promise.resolve(undefined)
+  let stop = () => {}
+  const aborted = new Promise<undefined>(resolve => {
+    stop = () => resolve(undefined)
+    signal.addEventListener('abort', stop, { once: true })
+  })
+  return Promise.race([promise, aborted]).finally(() => signal.removeEventListener('abort', stop))
+}
+
+const EXPIRED =
+  'codex: the question Codex asked has expired: the Codex turn that asked it is gone (Codex exited, the session was resumed, or the mod reloaded), so nothing was answered. Send the task again to start a new turn.'
+
+// Codex's files as model.ts reads them; `$.env.get` takes literal names.
+async function files($: EngineInterface): Promise<Files> {
+  const [CODEX_HOME, HOME, USERPROFILE] = [await $.env.get('CODEX_HOME'), await $.env.get('HOME'), await $.env.get('USERPROFILE')]
+  return { env: { CODEX_HOME, HOME, USERPROFILE }, read: path => $.fs.read(path) }
+}
+
+export const step: Hook<'turn.step'> = async function* ($, e, next) {
+  const agentId = e.agentId
+  if (!agentId) return yield* next(e)
+  const agent = (await $.agent.list()).find(a => a.id === agentId)
+  const type = agent && TYPES[agent.type]
+  if (!type) return yield* next(e)
+
+  const api = await $.session.messages({ as: 'api', agentId })
+  if ('deny' in api) throw new Error(api.deny)
+  const rows = rowsOf(api)
+  const request = requestOf(rows, (await read($, sent))[agentId] ?? [])
+  // Codex's progress is the transcript's text; the report goes back with a
+  // handback call, or as the final text where the loop has no such tool.
+  const handback = handsBack(rows)
+
+  const run: Run = {}
+  let progress = ''
+  let question: string | undefined
+  let model = 'codex'
+  let server: Server | undefined
+  const show = (text: string) => {
+    progress += text
+    return shown(text)
+  }
+  if (request) {
+    const pending = held.get(agentId)
+    const reply = pending && replyOf(pending.asked, request.prompt)
+    const cwd = await $.session.cwd()
+    try {
+      if (pending?.server.isEnded() || (!pending && expiredAnswer(lastAnswer(rows), request.prompt))) {
+        held.delete(agentId)
+        question = EXPIRED
+      } else if (pending && !reply) {
+        // Not an answer: ask again, Codex still waiting.
+        question = `That does not answer Codex.\n\n${questionOf(pending.asked)}`
+      } else if (pending && reply) {
+        held.delete(agentId)
+        server = pending.server
+        run.threadId = pending.threadId
+        await server.respond(pending.asked.id, reply)
+        yield show(`answered Codex\n`)
+        await note($, agentId, 'answered Codex')
+      } else {
+        // The spawn prompt's flags hold for every run of the agent; they are
+        // not part of the task.
+        const first = request.sessionId === undefined
+        const flags = flagsOf(request.opening, type.pin)
+        if ('error' in flags) throw new Error(flags.error)
+        const config = await codexConfig(await files($))
+        model = flags.model ?? config.model ?? model
+        yield show(`codex ${labelOf(config, flags)} · ${type.shown}\n`)
+        server = await open({ spawn: r => $.process.spawn(r), write: (p, t) => $.fs.write(p, t), stat: p => $.fs.stat(p) }, flags.args, cwd)
+        const where = flags.cwd ?? cwd
+        const thread = first
+          ? await server.call('thread/start', { cwd: where, ...(flags.ephemeral ? { ephemeral: true } : {}), ...(await rootsOf(server, flags.addDirs)) })
+          : await server.call('thread/resume', { threadId: request.sessionId, cwd: where })
+        run.threadId = thread.thread.id
+        yield show(`codex session ${run.threadId}\n\n`)
+        const images = flags.images.map(path => ({ type: 'localImage', path }))
+        const schema = flags.outputSchema ? { outputSchema: JSON.parse(await $.fs.read(flags.outputSchema)) } : {}
+        const opens = request.texts[0] === request.opening
+        const text = opens ? (flagsOf(request.prompt, type.pin) as Flags).prompt : request.prompt
+        await server.call('turn/start', { threadId: run.threadId, input: [{ type: 'text', text }, ...images], ...schema })
+      }
+      while (server && !question) {
+        const message = await unlessAborted(next.signal, server.next())
+        if (!message) {
+          if (!next.signal.aborted) run.error = `codex app-server exited: ${server.stderr().trim().split('\n').at(-1) || 'no reason given'}`
+          break
+        }
+        if (message.id !== undefined) {
+          const asked = { id: message.id, method: message.method, params: message.params }
+          question = questionOf(asked)
+          if (question) held.set(agentId, { server, asked, threadId: run.threadId! })
+          else await server.respond(message.id, replyOf(asked, '')!)
+          continue
+        }
+        const step = apply(run, message.method, message.params)
+        if (step !== undefined) {
+          yield show(step)
+          await note($, agentId, step)
+        }
+        if (run.isDone) break
+      }
+    } catch (err) {
+      run.error = (err as Error).message
+      // Only a missing CLI, or one too old for app-server, earns the hint.
+      if (`${run.error}\n${server?.stderr() ?? ''}`.includes(NO_CODEX) || /unrecognized subcommand '?app-server/.test(`${run.error}\n${server?.stderr() ?? ''}`)) {
+        run.error += '. The codex mod needs the Codex CLI with `codex app-server` (0.159 or newer): `npm install -g @openai/codex`, then `codex login`.'
+      }
+    } finally {
+      if (server && !held.has(agentId)) server.close()
+      await update($, sent, all => ({ ...all, [agentId]: [...(all[agentId] ?? []), ...request.texts] }))
+    }
+  }
+
+  // Codex's own token counts, so the agent's row shows what the run cost.
+  const usage: TurnUsage | null = run.usage ? { ...run.usage, model } : null
+  const message = question
+    ? question
+    : request
+      ? run.error
+        ? `${run.answer ? `${run.answer}\n\n` : ''}codex failed: ${run.error}`
+        : (run.answer ?? 'codex: the turn ended without a message.')
+      : (lastReport(rows) ?? 'codex: no new request to run.')
+  if (!handback) {
+    // The session line lets a follow-up resume this run (see requestOf).
+    const text = run.threadId ? `${message}\n\ncodex session ${run.threadId}` : message
+    yield { kind: 'text', index: 1, text }
+    yield { kind: 'stop', stopReason: 'end_turn', usage }
+    return { turnId: e.turnId, index: e.index, answer: text, toolUses: [], stopReason: 'end_turn', usage }
+  }
+  if (progress === '' && !question) yield show(run.error ? `codex: ${run.error}\n` : 'codex: nothing to run.\n')
+  const input = { message }
+  yield { kind: 'tool', index: 1, id: `toolu_codex_${crypto.randomUUID().replaceAll('-', '')}`, name: HANDBACK }
+  yield { kind: 'input', index: 1, json: JSON.stringify(input) }
+  yield { kind: 'stop', stopReason: 'tool_use', usage }
+  return { turnId: e.turnId, index: e.index, answer: progress, toolUses: [{ name: HANDBACK, input }], stopReason: 'tool_use', usage }
+}
+
+// `add-dir`: the config's writable roots plus the ones asked for, since a
+// thread's setting replaces the config's list rather than adding to it.
+async function rootsOf(server: Server, dirs: readonly string[]): Promise<object> {
+  if (dirs.length === 0) return {}
+  const { config } = await server.call('config/read', {})
+  const roots = [...(config?.sandbox_workspace_write?.writable_roots ?? []), ...dirs]
+  return { config: { 'sandbox_workspace_write.writable_roots': roots } }
+}
