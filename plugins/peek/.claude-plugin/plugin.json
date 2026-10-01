@@ -1,6 +1,6 @@
 {
   "name": "peek",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Images in the terminal: Claude shows the pictures it makes or finds inline, as real pixels in kitty and Ghostty and as a colored-block preview elsewhere",
   "author": {
     "name": "alex2481kobe",

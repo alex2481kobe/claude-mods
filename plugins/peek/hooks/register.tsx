@@ -146,9 +146,9 @@ const DITHER = 0.25
 const loadPicture = async ($: EngineInterface, path: string, columns: number): Promise<Picture> => {
   // sips only warns, and exits 0, on a file it cannot open.
   if (!(await $.fs.exists(path).catch(() => false))) throw new Error(`no such file: ${path}`)
-  const [width, height, format] = await probe($, path)
+  const [width, height] = await probe($, path)
   return (await hasKittyGraphics($))
-    ? loadPhoto($, path, format, width, height, columns)
+    ? loadPhoto($, path, width, height, columns)
     : loadCells($, path, width, height, columns)
 }
 
@@ -158,23 +158,16 @@ const hasKittyGraphics = async ($: EngineInterface) =>
   (await $.env.get('TERM_PROGRAM')) === 'ghostty' || (await $.env.get('KITTY_WINDOW_ID')) !== undefined
 
 // A box of cells as wide as fits that keeps the picture's aspect: a cell is
-// about twice as tall as it is wide.
-const loadPhoto = async (
-  $: EngineInterface,
-  path: string,
-  format: string,
-  width: number,
-  height: number,
-  columns: number,
-): Promise<Picture> => {
-  let file = path
-  if (format !== 'png') {
-    // The terminal reads the file at every draw, so the PNG is kept.
-    const dir = `${await tmpdir($)}peek`
-    await $.process.run(['mkdir', '-p', dir])
-    file = `${dir}/${await $.clock.now()}-${Math.random().toString(36).slice(2)}.png`
-    const sips = await $.process.run(['sips', '-s', 'format', 'png', path, '--out', file])
-    if (sips.exitCode !== 0) throw new Error(`could not convert ${path} to PNG: ${sips.stderr.trim()}`)
+// about twice as tall as it is wide. The terminal reads the file at every
+// draw, and the engine refuses a file on a network or device path, so it
+// always draws a local PNG copy, kept for the session.
+const loadPhoto = async ($: EngineInterface, path: string, width: number, height: number, columns: number): Promise<Picture> => {
+  const dir = `${await tmpdir($)}peek`
+  await $.process.run(['mkdir', '-p', dir])
+  const file = `${dir}/${await $.clock.now()}-${Math.random().toString(36).slice(2)}.png`
+  const sips = await $.process.run(['sips', '-s', 'format', 'png', path, '--out', file])
+  if (sips.exitCode !== 0 || !(await $.fs.exists(file))) {
+    throw new Error(`could not read ${path} as an image: ${sips.stderr.trim() || sips.stdout.trim()}`)
   }
   const cols = Math.max(1, Math.min(columns, 255, Math.round((MAX_ROWS * 2 * width) / height)))
   const rows = Math.max(1, Math.min(MAX_ROWS, Math.round((cols * height) / width / 2)))
@@ -202,11 +195,11 @@ const loadCells = async ($: EngineInterface, path: string, width: number, height
 
 const tmpdir = async ($: EngineInterface) => ((await $.env.get('TMPDIR')) ?? '/tmp').replace(/\/?$/, '/')
 
-// The image's pixel width, height and format, as sips reads them.
-const probe = async ($: EngineInterface, path: string): Promise<[number, number, string]> => {
-  const info = await $.process.run(['sips', '-g', 'pixelWidth', '-g', 'pixelHeight', '-g', 'format', path])
+// The image's pixel width and height, as sips reads them.
+const probe = async ($: EngineInterface, path: string): Promise<[number, number]> => {
+  const info = await $.process.run(['sips', '-g', 'pixelWidth', '-g', 'pixelHeight', path])
   const width = Number(/pixelWidth: (\d+)/.exec(info.stdout)?.[1] ?? 0)
   const height = Number(/pixelHeight: (\d+)/.exec(info.stdout)?.[1] ?? 0)
   if (width === 0 || height === 0) throw new Error(`could not read ${path} as an image`)
-  return [width, height, /format: (\S+)/.exec(info.stdout)?.[1] ?? '']
+  return [width, height]
 }
