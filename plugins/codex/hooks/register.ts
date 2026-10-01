@@ -1,3 +1,4 @@
+import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, TurnStepChunk, TurnUsage } from 'claude-code'
 
 import { apply, lines, type Run } from './events'
@@ -51,6 +52,9 @@ const CHOOSING = (models: string[]) =>
   (models.length > 0 ? ` (models: ${models.join(', ')})` : '') +
   `; left out, Codex uses its own config.`
 
+// What each codex agent has passed to Codex, so a message is sent once.
+const sent = atom({ plugin: 'codex', key: 'sent' } as const, {})
+
 function handbackOf(run: Run, code: number | null, stderr: string): string {
   if (run.answer && !run.error && code === 0) return run.answer
   const why = run.error ?? (stderr.trim().split('\n').slice(-5).join('\n') || `exit ${code}`)
@@ -92,7 +96,7 @@ export const register: Register = on => {
     const api = await $.session.messages({ as: 'api', agentId })
     if ('deny' in api) throw new Error(api.deny)
     const rows = rowsOf(api)
-    const request = requestOf(rows)
+    const request = requestOf(rows, (await read($, sent))[agentId] ?? [])
     // Codex's progress is the transcript's text; the report goes back with a
     // handback call, or as the final text where the loop has no such tool.
     const handback = handsBack(rows)
@@ -105,6 +109,7 @@ export const register: Register = on => {
     let model = 'codex'
     if (request) {
       const options = optionsOf(request.opening)
+      const asked = request.texts
       const config = await codexConfig($)
       model = options.model ?? config.model ?? model
       const label = labelOf(config, options)
@@ -114,7 +119,7 @@ export const register: Register = on => {
       const child = $.process.spawn({
         argv: argvOf(sandbox, request.sessionId, options),
         cwd: await $.session.cwd(),
-        input: request.sessionId ? request.prompt : options.prompt,
+        input: request.sessionId ? request.prompt : optionsOf(request.prompt).prompt,
       })
       let buffer = ''
       try {
@@ -143,6 +148,8 @@ export const register: Register = on => {
       } catch (err) {
         if (progress !== header) throw err
         run.error = `the codex CLI did not start (${String(err)}). Install it with \`npm install -g @openai/codex\`, run \`codex login\`, and make sure \`codex\` is on the PATH Claude Code starts with.`
+      } finally {
+        await update($, sent, all => ({ ...all, [agentId]: [...(all[agentId] ?? []), ...asked] }))
       }
     }
 

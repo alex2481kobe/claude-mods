@@ -1,6 +1,7 @@
-// What a codex agent's loop is being asked, read from its own conversation so
-// the mod keeps no state: the spawn prompt on the first run, then whatever
-// was sent after the last run, resuming that run's Codex session.
+// What a codex agent's loop is being asked: every message in its conversation
+// that has not yet been passed to Codex. Position is no guide, since the
+// engine may fold a message queued while Codex ran into an earlier turn, so
+// the caller keeps the list of messages already passed on (`sent`).
 
 export const HANDBACK = 'SubagentHandback'
 
@@ -16,6 +17,7 @@ function isEngineText(text: string): boolean {
 export type Row = {
   role: 'user' | 'assistant'
   text: string
+  texts: readonly string[]
   toolUses: readonly { tool: string; input: Record<string, unknown>; isError?: true }[]
 }
 
@@ -32,12 +34,14 @@ export function rowsOf(turns: readonly ApiTurn[]): Row[] {
       if (block.type === 'tool_result' && block.is_error) failed.add(block.tool_use_id)
     }
   }
-  return turns.map(turn => ({
-    role: turn.role,
-    text: turn.content
+  return turns.map(turn => {
+    const texts = turn.content
       .filter(b => b.type === 'text' && typeof b.text === 'string' && !isEngineText(b.text))
       .map(b => b.text as string)
-      .join('\n\n'),
+    return {
+      role: turn.role,
+      text: texts.join('\n\n'),
+      texts,
     toolUses: turn.content
       .filter(b => b.type === 'tool_use')
       .map(b => ({
@@ -45,34 +49,34 @@ export function rowsOf(turns: readonly ApiTurn[]): Row[] {
         input: (b.input ?? {}) as Record<string, unknown>,
         ...(failed.has(b.id) ? { isError: true as const } : {}),
       })),
-  }))
+    }
+  })
 }
 
-// `opening` is the spawn prompt, which carries the agent's options.
-export type Request = { prompt: string; opening: string; sessionId?: string }
+// `opening` is the spawn prompt, which carries the agent's options; `texts`
+// are the messages this request passes on, for the caller to add to `sent`.
+export type Request = { prompt: string; opening: string; texts: string[]; sessionId?: string }
 
-export function requestOf(rows: readonly Row[]): Request | undefined {
-  const first = rows.find(r => r.role === 'user' && r.text !== '')
-  if (!first) return undefined
+export function requestOf(rows: readonly Row[], sent: readonly string[]): Request | undefined {
+  const asked = rows.filter(r => r.role === 'user').flatMap(r => r.texts)
+  const opening = asked[0]
+  if (opening === undefined) return undefined
 
-  // Every assistant row is a run's, whether it finished or was stopped part
-  // way; what the caller sends after the last one is the next request.
+  // Each message once: a text sent twice on purpose is asked twice.
+  const left = [...sent]
+  const texts = asked.filter(text => {
+    const at = left.indexOf(text)
+    if (at === -1) return true
+    left.splice(at, 1)
+    return false
+  })
+  if (texts.length === 0) return undefined
+
   let sessionId: string | undefined
-  let hasRun = false
-  let followUps: string[] = []
   for (const row of rows) {
-    if (row.role === 'assistant') {
-      sessionId = SESSION.exec(row.text)?.[1] ?? sessionId
-      hasRun = true
-      followUps = []
-    } else if (hasRun && row.text !== '') {
-      followUps.push(row.text)
-    }
+    if (row.role === 'assistant') sessionId = SESSION.exec(row.text)?.[1] ?? sessionId
   }
-
-  if (!hasRun) return { prompt: first.text, opening: first.text }
-  if (followUps.length === 0) return undefined
-  return { prompt: followUps.join('\n\n'), opening: first.text, sessionId }
+  return { prompt: texts.join('\n\n'), opening, texts, sessionId: sent.length > 0 ? sessionId : undefined }
 }
 
 // Whether this loop reports through a SubagentHandback call. An interactive

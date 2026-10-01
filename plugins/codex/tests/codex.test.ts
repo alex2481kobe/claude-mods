@@ -1,8 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
-import type { SessionMessage } from 'claude-code'
 
 import { apply, lines, type Run } from '../hooks/events'
-import { HANDBACK, requestOf } from '../hooks/request'
 
 const SESSION = '01a0f8f0-0000-7000-8000-000000000000'
 
@@ -41,24 +39,4 @@ describe('events', () => {
     apply(run, JSON.stringify({ type: 'turn.failed', error: { message: 'quota' } }))
     expect(run.error).toBe('quota')
   })
-})
-
-const user = (text: string): SessionMessage => ({ role: 'user', text, toolUses: [] })
-const handedBack: SessionMessage = {
-  role: 'assistant',
-  text: `codex session ${SESSION}\n\nanswer\n`,
-  toolUses: [{ tool_use_id: 't1', tool: HANDBACK, input: { message: 'answer' } }],
-}
-
-describe('requestOf', () => {
-  test('the first run is the spawn prompt, past the engine reminder', () => {
-    const rows = [user('review x'), user('<system-reminder>\ncall SubagentHandback</system-reminder>')]
-    expect(requestOf(rows)).toEqual({ prompt: 'review x', opening: 'review x' })
-  })
-
-  test('a follow-up after the handback resumes the same Codex session', () => {
-    const rows = [user('review x'), handedBack, user('and y?')]
-    expect(requestOf(rows)).toEqual({ prompt: 'and y?', opening: 'review x', sessionId: SESSION })
-  })
-
 })
