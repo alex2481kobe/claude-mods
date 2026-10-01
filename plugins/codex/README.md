@@ -9,6 +9,8 @@ subagent, and Codex behaves like one:
 
 - it shows in the agent list with its model and effort (`· Sol 6.1 (xhigh)`),
   its running time and token count, and clears when it finishes
+- its row's activity line updates as Codex works, and Enter opens its view,
+  where Codex's steps appear live and you can message it
 - it runs in the background, and its report comes back to Claude
 - you can message it, while it runs (`· 2 queued`) or after it finishes; each
   message resumes the same Codex session
@@ -73,9 +75,9 @@ in plain words: "have Codex review this on gpt-6-astra and gpt-6.1-sol".
 - The mod registers the two agent types.
 - When a `codex:*` agent's loop asks its model for a response, the mod answers
   instead: it runs `codex exec --json -s <sandbox>` (approvals off, so the
-  sandbox is the limit) in the session's working directory, streams Codex's
-  messages and commands into the agent's transcript, and reports Codex's token
-  usage on the agent's row.
+  sandbox is the limit) in the session's working directory, appends Codex's
+  messages and commands to the agent's conversation as they happen, and
+  reports Codex's token usage on the agent's row.
 - Codex's final message goes back as the agent's report: through the
   `SubagentHandback` tool in an interactive session, or as the final text where
   that tool does not exist (headless, SDK).

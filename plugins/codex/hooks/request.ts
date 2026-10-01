@@ -59,7 +59,9 @@ export type Request = { prompt: string; opening: string; texts: string[]; sessio
 
 export function requestOf(rows: readonly Row[], sent: readonly string[]): Request | undefined {
   const asked = rows.filter(r => r.role === 'user').flatMap(r => r.texts)
-  const opening = asked[0]
+  // The opening carries the agent's options. The first text passed to Codex
+  // is the true one; the engine may later place another message ahead of it.
+  const opening = sent[0] ?? asked[0]
   if (opening === undefined) return undefined
 
   // Each message once: a text sent twice on purpose is asked twice.

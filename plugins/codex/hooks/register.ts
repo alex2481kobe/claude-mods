@@ -55,6 +55,16 @@ const CHOOSING = (models: string[]) =>
 // What each codex agent has passed to Codex, so a message is sent once.
 const sent = atom({ plugin: 'codex', key: 'sent' } as const, {})
 
+// Codex's progress as notices in the agent's conversation, appended as it
+// happens: the agent's view shows them live, and the agent list's activity
+// line follows them as it follows a native agent's steps. The model never
+// reads a notice. Display only, so a refused append changes nothing else.
+async function note($: EngineInterface, agentId: string, text: string): Promise<void> {
+  await $.session
+    .append({ agentId, message: { type: 'system', content: [{ type: 'text', text: text.trimEnd() }] } })
+    .catch(() => undefined)
+}
+
 function handbackOf(run: Run, code: number | null, stderr: string): string {
   if (run.answer && !run.error && code === 0) return run.answer
   const why = run.error ?? (stderr.trim().split('\n').slice(-5).join('\n') || `exit ${code}`)
@@ -134,14 +144,18 @@ export const register: Register = on => {
             const step = apply(run, line)
             if (step === undefined) continue
             progress += step
-            yield shown(step)
+            // The session line stays in the agent's own text: a follow-up
+            // resumes the Codex session it names.
+            if (step.startsWith('codex session ')) yield shown(step)
+            else await note($, agentId, step)
           }
         }
         if (buffer.trim() !== '') {
           const step = apply(run, buffer)
           if (step !== undefined) {
             progress += step
-            yield shown(step)
+            if (step.startsWith('codex session ')) yield shown(step)
+            else await note($, agentId, step)
           }
         }
         code = (await child.result).code

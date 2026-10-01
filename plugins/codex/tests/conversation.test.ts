@@ -67,3 +67,10 @@ describe('reporting', () => {
     expect(lastReport(rowsOf([user(TASK), ran(), delivered(true)]))).toBe('the list')
   })
 })
+
+describe('options', () => {
+  test('the opening is the first text passed to Codex, even when the engine places a later one ahead of it', () => {
+    const rows = rowsOf([user(QUEUED, TASK), ran(), delivered()])
+    expect(requestOf(rows, [TASK])).toMatchObject({ opening: TASK, prompt: QUEUED })
+  })
+})
