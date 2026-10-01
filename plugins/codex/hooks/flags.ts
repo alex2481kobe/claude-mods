@@ -2,7 +2,7 @@
 // as `codex exec --help` spells them without the dashes: `model: gpt-6-astra`,
 // `sandbox: workspace-write`, `approve-for-me`, `config: key=value`. They
 // choose how Codex runs and are not part of the task. Codex's own config fills
-// in everything not chosen, and Codex enforces its requirements on all of it.
+// in everything not chosen.
 
 export type Flags = {
   // Arguments for `codex app-server`: config overrides and feature switches.

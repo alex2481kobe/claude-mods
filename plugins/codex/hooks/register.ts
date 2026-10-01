@@ -83,7 +83,7 @@ export const register: Register = on => {
       ...common,
       name: 'run',
       description:
-        `OpenAI Codex as your Codex config sets it up (sandbox, approvals, reviewer), changed per call by any of its flags: ${FLAG_NAMES.join(', ')}. Codex's own requirements decide what it accepts. Give it a self-contained prompt; it cannot see this conversation.` + choosing,
+        `OpenAI Codex as your Codex config sets it up (sandbox, approvals, reviewer), changed per call by any of its flags: ${FLAG_NAMES.join(', ')}. Give it a self-contained prompt; it cannot see this conversation.` + choosing,
     })
     return next(e)
   })
