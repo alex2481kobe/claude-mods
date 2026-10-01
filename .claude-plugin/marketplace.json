@@ -10,6 +10,11 @@
       "name": "codex",
       "source": "./plugins/codex",
       "description": "OpenAI Codex as native Claude Code subagents"
+    },
+    {
+      "name": "turn-card",
+      "source": "./plugins/turn-card",
+      "description": "Hover a prompt to see that turn's time, tool calls, output tokens and model"
     }
   ]
 }
