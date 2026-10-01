@@ -3,7 +3,7 @@ import type { EngineInterface, Register, TurnStepChunk, TurnUsage } from 'claude
 import { apply, lines, type Run } from './events'
 import { configOf, labelOf, modelsOf, type Choice } from './model'
 import { optionsOf, overridesOf, type Options } from './options'
-import { HANDBACK, handsBack, lastReport, requestOf } from './request'
+import { HANDBACK, handsBack, lastReport, requestOf, rowsOf } from './request'
 
 // Codex as native subagent types. The Agent tool starts one like any other
 // subagent (task list, background, SendMessage); a turn.step hook answers its
@@ -89,8 +89,9 @@ export const register: Register = on => {
     const sandbox = agent && SANDBOX[agent.type]
     if (!sandbox) return yield* next(e)
 
-    const rows = await $.session.messages({ agentId })
-    if ('deny' in rows) throw new Error(rows.deny)
+    const api = await $.session.messages({ as: 'api', agentId })
+    if ('deny' in api) throw new Error(api.deny)
+    const rows = rowsOf(api)
     const request = requestOf(rows)
     // Codex's progress is the transcript's text; the report goes back with a
     // handback call, or as the final text where the loop has no such tool.

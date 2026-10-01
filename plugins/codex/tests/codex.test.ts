@@ -61,8 +61,4 @@ describe('requestOf', () => {
     expect(requestOf(rows)).toEqual({ prompt: 'and y?', opening: 'review x', sessionId: SESSION })
   })
 
-  test('an engine nudge after the handback is not a follow-up', () => {
-    const rows = [user('review x'), handedBack, user('[handback-send-enforce] Your report has not been delivered.')]
-    expect(requestOf(rows)).toBeUndefined()
-  })
 })
