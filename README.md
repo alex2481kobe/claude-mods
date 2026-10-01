@@ -54,7 +54,8 @@ Ask Claude for it by name:
 > Use codex:write to add input validation to parseConfig in src/config.ts.
 
 Codex cannot see your conversation with Claude, so Claude passes it a
-self-contained prompt. Codex uses your own Codex login, model and config.
+self-contained prompt. Codex uses your own Codex login, model and config; the
+agent's label and transcript show the model your `config.toml` names.
 
 ### How it works
 
