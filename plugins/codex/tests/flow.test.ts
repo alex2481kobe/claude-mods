@@ -111,7 +111,7 @@ describe('a codex agent', () => {
     const done = await step($, 1)
     expect(fake.decisions).toEqual(['accept'])
     expect(done.report).toBe('Created note.txt.')
-    await new Promise(resolve => setTimeout(resolve, 20))
+    await new Promise<void>(resolve => setTimeout(() => resolve(), 20))
     expect(fake.isClosed).toBe(true)
   })
 
