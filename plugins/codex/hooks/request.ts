@@ -30,7 +30,9 @@ export function requestOf(rows: readonly SessionMessage[]): Request | undefined 
       sessionId = SESSION.exec(row.text)?.[1] ?? sessionId
       hasRun = true
       followUps = []
-    } else if (hasRun && row.text !== '' && !isEngineRow(row.text) && !row.toolResults?.length) {
+    } else if (hasRun && row.text !== '' && !isEngineRow(row.text)) {
+      // A message queued while the agent ran arrives on the same row as the
+      // result of its last tool call; the row's text is the message alone.
       followUps.push(row.text)
     }
   }

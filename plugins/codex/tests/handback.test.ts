@@ -30,3 +30,16 @@ describe('reporting', () => {
     expect(requestOf([user('task'), answered, user('and y?')])).toEqual({ prompt: 'and y?', opening: 'task', sessionId: SESSION })
   })
 })
+
+describe('queued messages', () => {
+  test('a message queued while Codex ran, delivered with the handback result, is the next request', () => {
+    const queued: SessionMessage = {
+      role: 'user',
+      text: 'The coordinator sent a message while you were working:\nAlso count the lines in app.js.\n\nAddress this before completing your current task.',
+      toolUses: [],
+      toolResults: [{ tool_use_id: 't', text: 'delivered', isError: false, result: {} }] as never,
+    }
+    const answered: SessionMessage = { role: 'assistant', text: `codex session ${SESSION}\n\nthe report\n`, toolUses: [] }
+    expect(requestOf([user('task'), answered, queued])).toMatchObject({ prompt: queued.text, sessionId: SESSION })
+  })
+})
