@@ -1,6 +1,7 @@
-import type { Register } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
 
 import { apply, lines, type Run } from './events'
+import { modelOf } from './model'
 import { HANDBACK, requestOf } from './request'
 
 // Codex as native subagent types. The Agent tool starts one like any other
@@ -23,6 +24,18 @@ function argvOf(sandbox: string, sessionId: string | undefined): string[] {
   return sessionId
     ? ['codex', 'exec', 'resume', ...common, '-c', `sandbox_mode="${sandbox}"`, sessionId, '-']
     : ['codex', 'exec', ...common, '-s', sandbox, '-']
+}
+
+// The model Codex will run with, from its config.toml; Codex's own default
+// when the config names none or cannot be read.
+async function codexModel($: EngineInterface): Promise<string> {
+  const home = (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE'))
+  const dir = (await $.env.get('CODEX_HOME')) ?? `${home}/.codex`
+  try {
+    return modelOf(await $.fs.read(`${dir}/config.toml`)) ?? 'default model'
+  } catch {
+    return 'default model'
+  }
 }
 
 function handbackOf(run: Run, code: number | null, stderr: string): string {
@@ -49,6 +62,11 @@ export const register: Register = on => {
     return next(e)
   })
 
+  on('agent.spawn', async ($, e, next) => {
+    if (!(e.subagentType in SANDBOX)) return next(e)
+    return next({ ...e, description: `${e.description} · codex ${await codexModel($)}` })
+  })
+
   on('turn.step', async function* ($, e, next) {
     const agentId = e.agentId
     if (!agentId) return yield* next(e)
@@ -65,6 +83,9 @@ export const register: Register = on => {
     let stderr = ''
     let code: number | null = null
     if (request) {
+      const header = `codex ${await codexModel($)} · ${sandbox}\n`
+      progress += header
+      yield { kind: 'text', index: 0, text: header }
       const child = $.process.spawn({
         argv: argvOf(sandbox, request.sessionId),
         cwd: await $.session.cwd(),
@@ -88,7 +109,7 @@ export const register: Register = on => {
         }
         code = (await child.result).code
       } catch (err) {
-        if (progress !== '') throw err
+        if (progress !== header) throw err
         run.error = `the codex CLI did not start (${String(err)}). Install it with \`npm install -g @openai/codex\`, run \`codex login\`, and make sure \`codex\` is on the PATH Claude Code starts with.`
       }
     }
