@@ -7,16 +7,33 @@ import { lines } from './events'
 // in a private temporary folder that the mod writes each message into. The
 // shell around it holds the FIFO open while it lives, so the server sees the
 // end of its input, and exits, when the shell does; the folder goes with it.
+// Codex runs in a process group of its own, so ending the shell ends every
+// process Codex started. If Claude Code dies without stopping the shell (a
+// crash, SIGKILL), a watcher sees its parent gone within a second or two and
+// ends the shell, and Codex with it.
+
+// What the shell says when there is no `codex` to run.
+export const NO_CODEX = 'codex-mod: codex: command not found'
+
+// The line that names the FIFO: the path follows it, as it is, to the end of
+// the line, so no character in TMPDIR needs escaping.
+const FIFO_LINE = 'codex-mod fifo '
 
 const SHELL = `
+command -v codex >/dev/null 2>&1 || { echo '${NO_CODEX}' >&2; exit 127; }
+p=$PPID
 d=$(mktemp -d "\${TMPDIR:-/tmp}/codex-mod.XXXXXX") || exit 1
-trap 'kill $c 2>/dev/null; rm -rf "$d"' EXIT
+trap 'kill -TERM -$c $c $w 2>/dev/null; rm -rf "$d"' EXIT
 trap 'exit 143' TERM HUP INT
 mkfifo -m 600 "$d/in" || exit 1
+set -m
 codex app-server "$@" < "$d/in" &
 c=$!
+set +m
+(while kill -0 $p && kill -0 $$; do sleep 1; done; kill -TERM -$c $$; rm -rf "$d") >/dev/null 2>&1 &
+w=$!
 exec 3> "$d/in"
-printf '{"fifo":"%s"}\\n' "$d/in"
+printf '${FIFO_LINE}%s\\n' "$d/in"
 wait $c
 `
 
@@ -32,12 +49,16 @@ export type Server = {
   next: () => Promise<Incoming | undefined>
   close: () => void
   stderr: () => string
+  // Whether the server has gone: its output ended.
+  isEnded: () => boolean
 }
 
-// What the server needs of the engine: a child process, and a file write.
+// What the server needs of the engine: a child process, a file write, and
+// what a path leads to (a FIFO is `other`; a missing path throws).
 export type Host = {
   spawn: (request: ProcessSpawnRequest) => HookStream<ProcessSpawnChunk, ProcessSpawnResult>
   write: (path: string, text: string) => Promise<void>
+  stat: (path: string) => Promise<{ kind: string; isLink: boolean }>
 }
 
 export async function open(host: Host, args: readonly string[], cwd: string): Promise<Server> {
@@ -67,20 +88,25 @@ export async function open(host: Host, args: readonly string[], cwd: string): Pr
       errors += String(err)
     }
     isEnded = true
-    for (const { reject } of waiting.values()) reject(new Error(`codex app-server exited: ${errors.trim().split('\n').at(-1) ?? ''}`))
+    for (const { reject } of waiting.values()) reject(gone())
     waiting.clear()
     wake?.()
   })()
 
+  // Why a call or write cannot reach the server: it went, saying this last.
+  function gone(): Error {
+    return new Error(`codex app-server exited: ${errors.trim().split('\n').at(-1) || 'no reason given'}`)
+  }
+
   function receive(line: string): void {
-    let message: Message & { fifo?: string }
+    if (line.startsWith(FIFO_LINE)) return fifo(line.slice(FIFO_LINE.length))
+    let message: Message
     try {
       message = JSON.parse(line)
     } catch {
       if (line.trim()) errors = (errors + line + '\n').slice(-4000)
       return
     }
-    if (message.fifo) return fifo(message.fifo)
     if (message.method === undefined && typeof message.id === 'number' && waiting.has(message.id)) {
       const call = waiting.get(message.id)!
       waiting.delete(message.id)
@@ -98,15 +124,27 @@ export async function open(host: Host, args: readonly string[], cwd: string): Pr
     fifo = resolve
     void ended.then(() => reject(new Error(`codex app-server did not start: ${errors.trim() || 'no output'}`)))
   })
+  // A write creates a path that is not there, so once the shell has removed
+  // the FIFO a write would leave a plain file of Codex's answers behind.
+  // Nothing is written after the server ends, or to anything but the FIFO. The
+  // FIFO is gone only once the shell is on its way out, so the refusal waits
+  // for its output to end and gives the reason it gave.
   const write = (message: object) => {
-    writing = writing.then(() => host.write(path, `${JSON.stringify({ jsonrpc: '2.0', ...message })}\n`))
+    writing = writing.then(async () => {
+      const at = isEnded ? undefined : await host.stat(path).catch(() => undefined)
+      if (isEnded || at?.kind !== 'other' || at.isLink) {
+        await ended
+        throw gone()
+      }
+      await host.write(path, `${JSON.stringify({ jsonrpc: '2.0', ...message })}\n`)
+    })
     return writing
   }
 
   const server: Server = {
     call: (method, params) =>
       new Promise((resolve, reject) => {
-        if (isEnded) return reject(new Error('codex app-server is not running'))
+        if (isEnded) return reject(gone())
         const id = ++lastId
         waiting.set(id, { resolve, reject })
         write({ id, method, ...(params === undefined ? {} : { params }) }).catch(reject)
@@ -118,6 +156,7 @@ export async function open(host: Host, args: readonly string[], cwd: string): Pr
     },
     close: () => void child.return({ code: null, signal: null }),
     stderr: () => errors,
+    isEnded: () => isEnded,
   }
   await server.call('initialize', { clientInfo: { name: 'claude-mods-codex', title: 'Claude Code', version: '1' } })
   await write({ method: 'initialized' })

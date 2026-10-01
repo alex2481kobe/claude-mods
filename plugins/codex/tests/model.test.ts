@@ -36,8 +36,26 @@ describe('flags', () => {
     expect(flags('search the code for x')).toMatchObject({ args: [], prompt: 'search the code for x' })
   })
 
-  test('a value that could break out of the override is refused, not passed', () => {
-    expect(flagsOf('model: a" -c x="y\nReview')).toEqual({ error: 'model needs a plain value, not "a" -c x="y"' })
+  test('a value that could break out of the override is never passed', () => {
+    // Not one plain value, so the line is the task's, as in 0.2.5.
+    expect(flags('model: a" -c x="y\nReview')).toMatchObject({ args: [], prompt: 'model: a" -c x="y\nReview' })
+    expect(flagsOf('model: a"b\nReview')).toEqual({ error: 'model needs a plain value, not "a"b"' })
+  })
+
+  test('a prose first line that starts with a flag name is the task, not an option', () => {
+    for (const line of ['color: change the header color', 'profile: the page is slow', 'search: every call', 'approval: review the flow', 'image: the logo is blurry', 'ephemeral: data is lost']) {
+      expect(flags(`${line}\nmore`)).toMatchObject({ args: [], images: [], prompt: `${line}\nmore` })
+    }
+    expect(flags('model: m\nsandbox: review the flow\nx', undefined)).toMatchObject({ prompt: 'sandbox: review the flow\nx' })
+  })
+
+  test('Model and Effort lines are read in any case, as in 0.2.5', () => {
+    expect(flags('Model: gpt-6-astra\nEFFORT: high\nx')).toMatchObject({ model: 'gpt-6-astra', effort: 'high', prompt: 'x' })
+    expect(flags('Sandbox: read-only\nx')).toMatchObject({ args: [], prompt: 'Sandbox: read-only\nx' })
+  })
+
+  test('an option line with a path or config value takes it whole', () => {
+    expect(flags('image: /tmp/my shot.png\nconfig: x="a b"\nlook')).toMatchObject({ images: ['/tmp/my shot.png'], args: ['-c', 'x="a b"'], prompt: 'look' })
   })
 
   test('every exec flag spelling reaches Codex as the setting it names', () => {
@@ -70,11 +88,16 @@ describe('flags', () => {
     ])
     expect(flagsOf('approve-for-me\nx', { sandbox: 'read-only' })).toHaveProperty('error')
     expect(flagsOf('config: sandbox_mode="danger-full-access"\nx', { sandbox: 'read-only' })).toHaveProperty('error')
+    // Moving the folder moves the writable root.
+    expect(flagsOf('cd: /elsewhere\nx', { sandbox: 'workspace-write' })).toHaveProperty('error')
+    expect(flagsOf('-C /elsewhere\nx', { sandbox: 'workspace-write' })).toHaveProperty('error')
+    expect(flags('cd: /elsewhere\nx')).toMatchObject({ cwd: '/elsewhere', prompt: 'x' })
   })
 
   test('a flag codex app-server cannot take says why instead of being dropped', () => {
     expect(flagsOf('profile: fast\nx')).toEqual({ error: 'profile: codex app-server takes no --profile; set the values with config: lines' })
     expect(flagsOf('sandbox: everything\nx')).toHaveProperty('error')
-    expect(flagsOf('approve-for-me: maybe\nx')).toHaveProperty('error')
+    // A bare flag with a value is prose, as "search: every call" is.
+    expect(flags('approve-for-me: maybe\nx')).toMatchObject({ args: [], prompt: 'approve-for-me: maybe\nx' })
   })
 })

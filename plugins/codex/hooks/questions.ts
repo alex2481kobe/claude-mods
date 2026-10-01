@@ -95,3 +95,14 @@ export function replyOf(asked: Asked, reply: string): Reply | undefined {
       return { error: { code: -32601, message: `the codex mod cannot answer ${asked.method}` } }
   }
 }
+
+// A report that is Codex's question, as questionOf words it.
+const ASKS = /^(?:That does not answer Codex\.\s+)?(?:Codex asks|The \S+ MCP server asks)/
+
+// Whether a message is a decision sent to a question whose Codex is gone (the
+// session was resumed, the mod reloaded, or Codex exited while it waited):
+// the agent's last report was the question and the message decides it. Such
+// a message is not passed to Codex as a new turn.
+export function expiredAnswer(lastReport: string | undefined, message: string): boolean {
+  return lastReport !== undefined && ASKS.test(lastReport) && decisionOf(message) !== undefined
+}

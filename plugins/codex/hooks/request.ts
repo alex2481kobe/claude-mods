@@ -112,3 +112,12 @@ export function lastReport(rows: readonly Row[]): string | undefined {
   }
   return report
 }
+
+// What the agent last reported: its last turn's handback, or its text where
+// the loop reports as text (headless).
+export function lastAnswer(rows: readonly Row[]): string | undefined {
+  const row = rows.findLast(r => r.role === 'assistant')
+  if (!row) return undefined
+  const use = row.toolUses.findLast(u => u.tool === HANDBACK && typeof u.input.message === 'string')
+  return use ? (use.input.message as string) : row.text
+}

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { questionOf, replyOf } from '../hooks/questions'
+import { expiredAnswer, questionOf, replyOf } from '../hooks/questions'
 
 // A request as `codex app-server` sent it in a live run (read-only sandbox,
 // approvals routed to the user).
@@ -50,5 +50,14 @@ describe('questions', () => {
     const asked = { id: 3, method: 'item/tool/call', params: {} }
     expect(questionOf(asked)).toBeUndefined()
     expect(replyOf(asked, '')).toEqual({ error: { code: -32601, message: 'the codex mod cannot answer item/tool/call' } })
+  })
+
+  test('a decision sent after a question that is no longer held is known as one', () => {
+    const asked = questionOf(COMMAND)!
+    expect(expiredAnswer(asked, 'approve')).toBe(true)
+    expect(expiredAnswer(`That does not answer Codex.\n\n${asked}`, 'Decline.')).toBe(true)
+    expect(expiredAnswer(asked, 'Now review app.js')).toBe(false)
+    expect(expiredAnswer('Found 3 bugs.', 'approve')).toBe(false)
+    expect(expiredAnswer(undefined, 'approve')).toBe(false)
   })
 })

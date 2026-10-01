@@ -4,9 +4,9 @@ import type { EngineInterface, Register, TurnStepChunk, TurnUsage } from 'claude
 import { apply, type Run } from './events'
 import { flagsOf, FLAG_NAMES, type Flags, type Pin } from './flags'
 import { configOf, labelOf, modelsOf, type Choice } from './model'
-import { questionOf, replyOf, type Asked } from './questions'
-import { HANDBACK, handsBack, lastReport, requestOf, rowsOf } from './request'
-import { open, type Server } from './server'
+import { expiredAnswer, questionOf, replyOf, type Asked } from './questions'
+import { HANDBACK, handsBack, lastAnswer, lastReport, requestOf, rowsOf } from './request'
+import { NO_CODEX, open, type Server } from './server'
 
 // Codex as native subagent types. The Agent tool starts one like any other
 // subagent (task list, background, SendMessage); a turn.step hook answers its
@@ -67,11 +67,20 @@ async function note($: EngineInterface, agentId: string, text: string): Promise<
     .catch(() => undefined)
 }
 
-// Resolves undefined when the step is aborted first.
-function unlessAborted<T>(signal: AbortSignal, promise: Promise<T>): Promise<T | undefined> {
+// Resolves undefined when the step is aborted first; the listener goes once
+// the wait settles, so a long turn does not pile them up on the signal.
+export function unlessAborted<T>(signal: AbortSignal, promise: Promise<T>): Promise<T | undefined> {
   if (signal.aborted) return Promise.resolve(undefined)
-  return Promise.race([promise, new Promise<undefined>(resolve => signal.addEventListener('abort', () => resolve(undefined)))])
+  let stop = () => {}
+  const aborted = new Promise<undefined>(resolve => {
+    stop = () => resolve(undefined)
+    signal.addEventListener('abort', stop, { once: true })
+  })
+  return Promise.race([promise, aborted]).finally(() => signal.removeEventListener('abort', stop))
 }
+
+const EXPIRED =
+  'codex: the question Codex asked has expired: the Codex turn that asked it is gone (Codex exited, the session was resumed, or the mod reloaded), so nothing was answered. Send the task again to start a new turn.'
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
@@ -155,7 +164,10 @@ export const register: Register = on => {
       const reply = pending && replyOf(pending.asked, request.prompt)
       const cwd = await $.session.cwd()
       try {
-        if (pending && !reply) {
+        if (pending?.server.isEnded() || (!pending && expiredAnswer(lastAnswer(rows), request.prompt))) {
+          held.delete(agentId)
+          question = EXPIRED
+        } else if (pending && !reply) {
           // Not an answer: ask again, Codex still waiting.
           question = `That does not answer Codex.\n\n${questionOf(pending.asked)}`
         } else if (pending && reply) {
@@ -173,7 +185,7 @@ export const register: Register = on => {
           const config = await codexConfig($)
           model = flags.model ?? config.model ?? model
           yield show(`codex ${labelOf(config, flags)} · ${type.shown}\n`)
-          server = await open({ spawn: r => $.process.spawn(r), write: (p, t) => $.fs.write(p, t) }, flags.args, cwd)
+          server = await open({ spawn: r => $.process.spawn(r), write: (p, t) => $.fs.write(p, t), stat: p => $.fs.stat(p) }, flags.args, cwd)
           const where = flags.cwd ?? cwd
           const thread = first
             ? await server.call('thread/start', { cwd: where, ...(flags.ephemeral ? { ephemeral: true } : {}), ...(await rootsOf(server, flags.addDirs)) })
@@ -205,7 +217,8 @@ export const register: Register = on => {
         }
       } catch (err) {
         run.error = (err as Error).message
-        if (/ENOENT|not found|unrecognized subcommand/i.test(`${run.error} ${server?.stderr() ?? ''}`)) {
+        // Only a missing CLI, or one too old for app-server, earns the hint.
+        if (`${run.error}\n${server?.stderr() ?? ''}`.includes(NO_CODEX) || /unrecognized subcommand '?app-server/.test(`${run.error}\n${server?.stderr() ?? ''}`)) {
           run.error += '. The codex mod needs the Codex CLI with `codex app-server` (0.159 or newer): `npm install -g @openai/codex`, then `codex login`.'
         }
       } finally {
