@@ -5,7 +5,6 @@ import { replyBand } from './band'
 import { HINT, isCommand, SPECS } from './commands'
 import { flagsOf } from './flags'
 import { codexConfig, codexModels, labelOf, type Files } from './model'
-import { quietMain } from './quiet'
 import { closeHeld, command, steer, step } from './step'
 import { openView, replyIn, setOpenView } from './view'
 
@@ -60,9 +59,6 @@ export const register: Register = on => {
     const agent = e.agentId === undefined ? undefined : (await $.agent.list()).find(a => a.id === e.agentId)
     return yield* next(agent && TYPES[agent.type] ? { ...e, model: 'claude-haiku-4-5' } : e)
   })
-
-  // A main-loop turn's first step, which may be only a quiet run's report.
-  on('turn.step', { index: 0 }, quietMain)
 
   // A message sent to a codex agent while Codex works joins Codex's running
   // turn, so Codex reads it now and its answer covers it; the agent is not
