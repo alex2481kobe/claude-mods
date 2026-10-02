@@ -120,6 +120,41 @@ describe('commands in a codex agent', () => {
     expect(again.report).toBe('Counted.')
   })
 
+  // As seen live: a background agent's handback failed for want of the tool,
+  // and a message typed in its view was the next request.
+  test('a report whose handback failed goes ahead of the next answer, once', async ($, on) => {
+    const turns: ApiTurn[] = [{ role: 'user', content: [{ type: 'text', text: TASK }] }]
+    engine(on, turns)
+    codex(on, 'quiet')
+    const done = await step($, 0)
+    turns.push(
+      { role: 'assistant', content: [{ type: 'text', text: done.text }, { type: 'tool_use', id: 'h1', name: HANDBACK, input: { message: 'The review.' } }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'h1', content: `<tool_use_error>Error: No such tool available: ${HANDBACK}</tool_use_error>`, is_error: true }, { type: 'text', text: typed('Count the lines.') }] },
+    )
+    const both = await step($, 1)
+    expect(both.report).toBe(`The review.\n\nCounted.\n\ncodex session ${THREAD}`)
+    turns.push(
+      { role: 'assistant', content: [{ type: 'text', text: both.report }] },
+      { role: 'user', content: [{ type: 'text', text: typed('Count again.') }] },
+    )
+    expect((await step($, 2)).report).toBe(`Counted.\n\ncodex session ${THREAD}`)
+  })
+
+  test('a report whose handback was interrupted goes ahead of the next answer in the next handback, once', async ($, on) => {
+    const turns: ApiTurn[] = [{ role: 'user', content: [{ type: 'text', text: TASK }, { type: 'text', text: REMINDER }] }]
+    engine(on, turns)
+    codex(on, 'quiet')
+    const done = await step($, 0)
+    turns.push(
+      { role: 'assistant', content: [{ type: 'text', text: done.text }, { type: 'tool_use', id: 'h1', name: HANDBACK, input: { message: 'The review.' } }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'h1', content: "The user doesn't want to take this action right now. STOP what you are doing and wait for the user to tell you how to proceed." }, { type: 'text', text: typed('Count the lines.') }] },
+    )
+    const both = await step($, 1)
+    expect(both.report).toBe('The review.\n\nCounted.')
+    reply(turns, both, 'Count again.', 'h2')
+    expect((await step($, 2)).report).toBe('Counted.')
+  })
+
   test('a step cut off before Codex finished leaves its task unsent, so the next step runs it', async ($, on) => {
     const turns: ApiTurn[] = [{ role: 'user', content: [{ type: 'text', text: TASK }, { type: 'text', text: REMINDER }] }]
     engine(on, turns)

@@ -244,11 +244,12 @@ export const step: Hook<'turn.step'> = async function* ($, e, next) {
         ? `${run.answer ? `${run.answer}\n\n` : ''}codex failed: ${run.error}`
         : (run.answer ?? 'codex: the turn ended without a message.')
       : undefined
-  // With nothing new, the engine has run the loop again: a report that never
-  // reached the caller is given again, and otherwise the loop says only that.
+  // A report that never reached the caller goes ahead of this step's answer;
+  // with nothing new (the engine ran the loop again) the loop says only that.
+  const undelivered = undeliveredReport(rows)
   const message = request
-    ? [...replies, ...(codexSaid ? [codexSaid] : [])].join('\n\n')
-    : (undeliveredReport(rows) ?? 'codex: nothing new to send to Codex.')
+    ? [...(undelivered ? [undelivered] : []), ...replies, ...(codexSaid ? [codexSaid] : [])].join('\n\n')
+    : (undelivered ?? 'codex: nothing new to send to Codex.')
   if (!handback) {
     // The session line lets a follow-up resume this run (see requestOf).
     const text = run.threadId ? `${message}\n\ncodex session ${run.threadId}` : message

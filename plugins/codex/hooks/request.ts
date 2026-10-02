@@ -140,15 +140,18 @@ const DELIVERED = 'Report delivered to your caller.'
 
 // The report of the last handback the loop sent, unless it was delivered: a
 // handback that failed (no such tool) or was interrupted never reached the
-// caller, so it is given again.
+// caller, so it is given again, once: a later turn that carries it as text
+// (the loop then reports as text) has given it.
 export function undeliveredReport(rows: readonly Row[]): string | undefined {
-  let last: Row['toolUses'][number] | undefined
-  for (const row of rows) {
+  let last: { use: Row['toolUses'][number]; at: number } | undefined
+  rows.forEach((row, at) => {
     for (const use of row.toolUses) {
-      if (use.tool === HANDBACK && typeof use.input.message === 'string') last = use
+      if (use.tool === HANDBACK && typeof use.input.message === 'string') last = { use, at }
     }
-  }
-  return last && !last.result?.includes(DELIVERED) ? (last.input.message as string) : undefined
+  })
+  if (!last || last.use.result?.includes(DELIVERED)) return undefined
+  const report = last.use.input.message as string
+  return rows.slice(last.at + 1).some(r => r.role === 'assistant' && r.text.includes(report)) ? undefined : report
 }
 
 // What the agent last reported: its last turn's handback, or its text where

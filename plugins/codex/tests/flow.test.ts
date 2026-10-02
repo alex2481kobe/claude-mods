@@ -26,7 +26,7 @@ describe('a codex agent', () => {
       {
         role: 'user',
         content: [
-          { type: 'tool_result', tool_use_id: 'h1', content: 'Report delivered' },
+          { type: 'tool_result', tool_use_id: 'h1', content: 'Report delivered to your caller.' },
           { type: 'text', text: 'The coordinator sent a message while you were working:\napprove\n\nAddress this before completing your current task.\n' },
           { type: 'text', text: 'approve' },
         ],
@@ -75,7 +75,7 @@ describe('a codex agent', () => {
     fake.argv = []
     turns.push(
       { role: 'assistant', content: [{ type: 'text', text: asked.text }, { type: 'tool_use', id: 'h1', name: HANDBACK, input: { message: asked.report } }] },
-      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'h1', content: 'Report delivered' }, { type: 'text', text: 'approve' }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'h1', content: 'Report delivered to your caller.' }, { type: 'text', text: 'approve' }] },
     )
     const { report } = await step($, 1)
     expect(report).toContain('expired')

@@ -200,8 +200,10 @@ agent's view.
 - Codex's final message, or its question, goes back as the agent's report:
   through the `SubagentHandback` tool in an interactive session, or as the
   final text where that tool does not exist (headless, SDK). A handback you
-  interrupt (Esc in the agent's view) does not change that; the report it
-  carried is handed back again the next time the agent's loop runs.
+  interrupt (Esc in the agent's view) does not change that. A report that
+  never reached the caller (its handback interrupted, or failed for want of
+  the tool) is given again the next time the agent's loop runs, once: ahead
+  of the answer to a new message, or alone when there is none.
 - A step interrupted before Codex finished (Esc) passes nothing on: Codex is
   stopped, and the next time the agent's loop runs, the message is given to
   Codex again. The agent's options come from the prompt it was spawned with,
