@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { HANDBACK, type ApiTurn } from '../hooks/request'
-import { codex, engine, REMINDER, step, TASK } from './fake'
+import { codex, engine, REMINDER, step, TASK, THREAD } from './fake'
 
 // A message typed in the agent's view, as the engine wraps it.
 const typed = (text: string) =>
@@ -30,19 +30,25 @@ describe('commands in a codex agent', () => {
     expect(done.report).toBe('codex: model gpt-6-astra from the next Codex turn.')
     expect(done.text).toContain('gpt-6-astra from the next Codex turn')
 
+    reply(turns, done, '/codex-sandbox read-only', 'h2a')
+    done = await step($, 21)
+    reply(turns, done, '/codex-approvals never', 'h2b')
+    done = await step($, 22)
     reply(turns, done, '/codex-status', 'h2')
     done = await step($, 2)
     expect(fake.argv).toEqual([])
     expect(done.report).toContain('gpt-6-astra from the next Codex turn (now gpt-6-luna)')
     expect(done.report).toContain('workspace-write')
-    expect(done.report).toContain('th1')
+    expect(done.report).toContain(THREAD)
     expect(done.report).toContain('1,500 in (1,000 cached), 40 out')
 
     reply(turns, done, 'Count the lines.', 'h3')
     done = await step($, 3)
-    const models = fake.argv.filter(arg => arg.startsWith('model='))
-    expect(models.at(-1)).toBe('model="gpt-6-astra"')
-    expect(done.text).toMatch(/^codex Astra 6/)
+    // A resumed session keeps the model it started with unless the resume
+    // names another, so the setting goes with the resume.
+    expect(fake.threads.at(-1)).toMatchObject({ threadId: THREAD, model: 'gpt-6-astra' })
+    expect(done.text).toMatch(/^codex Astra 6 · Codex/)
+    expect(fake.threads.at(-1)).toMatchObject({ sandbox: 'read-only', approvalPolicy: 'never' })
     expect(done.report).toBe('Counted.')
   })
 
@@ -56,7 +62,7 @@ describe('commands in a codex agent', () => {
     fake.argv = []
     const both = await step($, 1)
     expect(both.report).toBe('codex: effort high from the next Codex turn.\n\nCounted.')
-    expect(fake.argv).toContain('model_reasoning_effort="high"')
+    expect(fake.threads.at(-1)).toMatchObject({ config: { model_reasoning_effort: 'high' } })
     expect(fake.prompts.at(-1)).toBe('Count the lines.')
   })
 })

@@ -9,13 +9,16 @@ import { HANDBACK, type ApiTurn } from '../hooks/request'
 // The test runner has timers; the mod's own environment declares none.
 declare const setTimeout: (run: () => void, ms: number) => unknown
 
+// The session the stand-in starts, an id of the shape Codex gives one.
+export const THREAD = '01a0f92d-0000-7000-8000-0000000000a1'
+
 // A TMPDIR holding a quote and a backslash, which the FIFO line carries as is.
 const FIFO = '/tmp/we"ird\\dir/codex-mod.test/in'
 export const TASK = 'model: gpt-6-luna\nsandbox: read-only\nask-for-approval: on-request\nconfig: approvals_reviewer="user"\nCreate note.txt.'
 export const INSTALL = 'needs the Codex CLI with `codex app-server`'
 export const REMINDER = `<system-reminder>\nYour final report is delivered through ${HANDBACK}.\n</system-reminder>`
 
-type Fake = { argv: string[]; prompts: string[]; decisions: unknown[]; isClosed: boolean; writesAfterClose: number }
+type Fake = { argv: string[]; threads: any[]; prompts: string[]; decisions: unknown[]; isClosed: boolean; writesAfterClose: number }
 
 // How the stand-in ends: answers and finishes (`ok`), finishes without asking
 // (`quiet`), dies while its question waits (`crash`), or the shell finds no
@@ -27,7 +30,7 @@ export type Mode = 'ok' | 'quiet' | 'crash' | 'no-app-server' | 'no-codex' | 'co
 // in its turn, and finishes the turn once that is answered. The FIFO is there
 // only while it runs, as the shell removes it on the way out.
 export function codex(on: On, mode: Mode = 'ok'): Fake {
-  const fake: Fake = { argv: [], prompts: [], decisions: [], isClosed: false, writesAfterClose: 0 }
+  const fake: Fake = { argv: [], threads: [], prompts: [], decisions: [], isClosed: false, writesAfterClose: 0 }
   const out: string[] = []
   let wake: (() => void) | undefined
   const send = (message: object) => {
@@ -72,23 +75,26 @@ export function codex(on: On, mode: Mode = 'ok'): Fake {
       const m = JSON.parse(line)
       if (m.method === 'initialize') send({ id: m.id, result: {} })
       if (m.method === 'thread/start' || m.method === 'thread/resume') {
-        send({ id: m.id, result: { thread: { id: 'th1' }, model: 'gpt-6-luna', reasoningEffort: 'low', sandbox: { type: 'workspaceWrite' }, approvalPolicy: 'on-request' } })
+        // The session runs with what the call asked for, over the spawn's own.
+        fake.threads.push(m.params)
+        const effort = m.params.config?.model_reasoning_effort ?? null
+        send({ id: m.id, result: { thread: { id: THREAD }, model: m.params.model ?? 'gpt-6-luna', reasoningEffort: effort, sandbox: { type: 'workspaceWrite' }, approvalPolicy: m.params.approvalPolicy ?? 'on-request' } })
       }
       if (m.method === 'turn/start') fake.prompts.push(m.params.input[0].text)
       if (m.method === 'turn/start' && mode === 'quiet') {
         send({ id: m.id, result: { turn: { id: 't1' } } })
-        send({ method: 'thread/tokenUsage/updated', params: { threadId: 'th1', tokenUsage: { total: { inputTokens: 1500, cachedInputTokens: 1000, outputTokens: 40 }, last: { inputTokens: 1500, cachedInputTokens: 1000, outputTokens: 40 } } } })
-        send({ method: 'item/completed', params: { threadId: 'th1', item: { type: 'agentMessage', text: 'Counted.' } } })
-        send({ method: 'turn/completed', params: { threadId: 'th1', turn: { status: 'completed' } } })
+        send({ method: 'thread/tokenUsage/updated', params: { threadId: THREAD, tokenUsage: { total: { inputTokens: 1500, cachedInputTokens: 1000, outputTokens: 40 }, last: { inputTokens: 1500, cachedInputTokens: 1000, outputTokens: 40 } } } })
+        send({ method: 'item/completed', params: { threadId: THREAD, item: { type: 'agentMessage', text: 'Counted.' } } })
+        send({ method: 'turn/completed', params: { threadId: THREAD, turn: { status: 'completed' } } })
       } else if (m.method === 'turn/start') {
         send({ id: m.id, result: { turn: { id: 't1' } } })
-        send({ id: 0, method: 'item/commandExecution/requestApproval', params: { threadId: 'th1', command: "/bin/zsh -lc 'printf hi > note.txt'", cwd: '/work' } })
+        send({ id: 0, method: 'item/commandExecution/requestApproval', params: { threadId: THREAD, command: "/bin/zsh -lc 'printf hi > note.txt'", cwd: '/work' } })
         asked = true
       }
       if (m.method === undefined && m.id === 0) {
         fake.decisions.push(m.result?.decision)
-        send({ method: 'item/completed', params: { threadId: 'th1', item: { type: 'agentMessage', text: 'Created note.txt.' } } })
-        send({ method: 'turn/completed', params: { threadId: 'th1', turn: { status: 'completed' } } })
+        send({ method: 'item/completed', params: { threadId: THREAD, item: { type: 'agentMessage', text: 'Created note.txt.' } } })
+        send({ method: 'turn/completed', params: { threadId: THREAD, turn: { status: 'completed' } } })
       }
     }
     return { value: undefined }

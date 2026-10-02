@@ -53,11 +53,16 @@ export function answerOf(text: string, options: Options, pin: Pin | undefined, r
   return { reply: `codex: ${name} ${value} from the next Codex turn.`, options: { ...options, [setting.option]: value } }
 }
 
-// The settings as the option lines they are, for the next Codex turn.
-export function optionLines(options: Options): string {
-  return Object.entries(options)
-    .map(([name, value]) => `${name}: ${value}`)
-    .join('\n')
+// The settings as thread/start and thread/resume take them: a resumed
+// session keeps the model, sandbox and approvals it ran with unless the call
+// names others, so they go with every call.
+export function threadParamsOf(options: Options): { model?: string; sandbox?: string; approvalPolicy?: string; config?: Record<string, string> } {
+  return {
+    ...(options.model ? { model: options.model } : {}),
+    ...(options.sandbox ? { sandbox: options.sandbox } : {}),
+    ...(options['ask-for-approval'] ? { approvalPolicy: options['ask-for-approval'] } : {}),
+    ...(options.effort ? { config: { model_reasoning_effort: options.effort } } : {}),
+  }
 }
 
 const count = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',')

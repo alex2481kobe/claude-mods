@@ -3,10 +3,10 @@ import type { EngineInterface, Hook, TurnStepChunk, TurnUsage } from 'claude-cod
 
 import type { CodexRun } from '../types'
 import { TYPES } from './agents'
-import { answerOf, isCommand, optionLines } from './commands'
+import { answerOf, isCommand, threadParamsOf } from './commands'
 import { apply, reportOf, type Run } from './events'
-import { flagsOf, flagsWith, type Flags, type Pin } from './flags'
-import { codexConfig, labelOf, type Files } from './model'
+import { flagsOf, type Flags, type Pin } from './flags'
+import { labelOf } from './model'
 import { expiredAnswer, questionOf, replyOf, type Asked } from './questions'
 import { HANDBACK, handsBack, lastAnswer, lastReport, requestOf, rowsOf } from './request'
 import { NO_CODEX, open, type Server } from './server'
@@ -58,12 +58,6 @@ export function unlessAborted<T>(signal: AbortSignal, promise: Promise<T>): Prom
 
 const EXPIRED =
   'codex: the question Codex asked has expired: the Codex turn that asked it is gone (Codex exited, the session was resumed, or the mod reloaded), so nothing was answered. Send the task again to start a new turn.'
-
-// Codex's files as model.ts reads them; `$.env.get` takes literal names.
-async function files($: EngineInterface): Promise<Files> {
-  const [CODEX_HOME, HOME, USERPROFILE] = [await $.env.get('CODEX_HOME'), await $.env.get('HOME'), await $.env.get('USERPROFILE')]
-  return { env: { CODEX_HOME, HOME, USERPROFILE }, read: path => $.fs.read(path) }
-}
 
 // The agent's `/codex-*` commands, answered in order; a setting is kept for
 // its next Codex turn.
@@ -139,21 +133,21 @@ export const step: Hook<'turn.step'> = async function* ($, e, next) {
         // The spawn prompt's flags hold for every run of the agent; they are
         // not part of the task.
         const first = request.sessionId === undefined
-        const set = (await read($, options))[agentId] ?? {}
-        const opening = flagsOf(request.opening, type.pin)
-        const flags = 'error' in opening || Object.keys(set).length === 0 ? opening : flagsWith(opening, optionLines(set), type.pin)
+        const flags = flagsOf(request.opening, type.pin)
         if ('error' in flags) throw new Error(flags.error)
-        const config = await codexConfig(await files($))
-        model = flags.model ?? config.model ?? model
-        yield show(`codex ${labelOf(config, flags)} · ${type.shown}\n`)
+        const set = threadParamsOf((await read($, options))[agentId] ?? {})
         server = await open({ spawn: r => $.process.spawn(r), write: (p, t) => $.fs.write(p, t), stat: p => $.fs.stat(p) }, flags.args, cwd)
         const where = flags.cwd ?? cwd
+        const config = { ...set.config, ...(await rootsOf(server, flags.addDirs)) }
+        const overrides = { ...set, ...(Object.keys(config).length > 0 ? { config } : {}) }
         const thread = first
-          ? await server.call('thread/start', { cwd: where, ...(flags.ephemeral ? { ephemeral: true } : {}), ...(await rootsOf(server, flags.addDirs)) })
-          : await server.call('thread/resume', { threadId: request.sessionId, cwd: where })
+          ? await server.call('thread/start', { cwd: where, ...(flags.ephemeral ? { ephemeral: true } : {}), ...overrides })
+          : await server.call('thread/resume', { threadId: request.sessionId, cwd: where, ...overrides })
+        // What the session runs on, as Codex reports it.
         report = reportOf(thread)
         run.threadId = report.threadId
-        yield show(`codex session ${run.threadId}\n\n`)
+        model = report.model
+        yield show(`codex ${labelOf({}, { model: report.model, effort: report.effort ?? undefined })} · ${type.shown}\ncodex session ${run.threadId}\n\n`)
         const images = flags.images.map(path => ({ type: 'localImage', path }))
         const schema = flags.outputSchema ? { outputSchema: JSON.parse(await $.fs.read(flags.outputSchema)) } : {}
         const opens = asked[0] === request.opening
@@ -224,9 +218,8 @@ export const step: Hook<'turn.step'> = async function* ($, e, next) {
 
 // `add-dir`: the config's writable roots plus the ones asked for, since a
 // thread's setting replaces the config's list rather than adding to it.
-async function rootsOf(server: Server, dirs: readonly string[]): Promise<object> {
+async function rootsOf(server: Server, dirs: readonly string[]): Promise<Record<string, unknown>> {
   if (dirs.length === 0) return {}
   const { config } = await server.call('config/read', {})
-  const roots = [...(config?.sandbox_workspace_write?.writable_roots ?? []), ...dirs]
-  return { config: { 'sandbox_workspace_write.writable_roots': roots } }
+  return { 'sandbox_workspace_write.writable_roots': [...(config?.sandbox_workspace_write?.writable_roots ?? []), ...dirs] }
 }

@@ -155,13 +155,3 @@ export function flagsOf(text: string, pin?: Pin): Parsed {
   flags.prompt = lines.slice(used).join('\n').trim()
   return flags
 }
-
-// Option lines applied after the prompt's own, as Codex takes the last of a
-// repeated override: the settings a codex agent's commands chose. A line that
-// is not an option is refused, not passed as a task.
-export function flagsWith(flags: Flags, lines: string, pin?: Pin): Parsed {
-  const more = flagsOf(lines, pin)
-  if ('error' in more) return more
-  if (more.prompt !== '') return { error: `not an option line: ${more.prompt.split('\n')[0]}` }
-  return { ...flags, args: [...flags.args, ...more.args], model: more.model ?? flags.model, effort: more.effort ?? flags.effort }
-}

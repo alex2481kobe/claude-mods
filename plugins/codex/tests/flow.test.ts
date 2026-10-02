@@ -2,7 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { HANDBACK, type ApiTurn } from '../hooks/request'
 import { unlessAborted } from '../hooks/step'
-import { codex, engine, INSTALL, REMINDER, step, TASK } from './fake'
+import { codex, engine, INSTALL, REMINDER, step, TASK, THREAD } from './fake'
 
 // The test runner has timers; the mod's own environment declares none.
 declare const setTimeout: (run: () => void, ms: number) => unknown
@@ -17,7 +17,7 @@ describe('a codex agent', () => {
     expect(asked.report).toContain("Codex asks to run:\n  printf hi > note.txt")
     // Every step is the agent's own text, which its view shows; each is also
     // appended as a notice (the test runner stores no appended row).
-    expect(asked.text).toBe('codex Luna 6 · Codex\ncodex session th1\n\n')
+    expect(asked.text).toBe(`codex Luna 6 · Codex\ncodex session ${THREAD}\n\n`)
     expect(fake.argv).toContain('approvals_reviewer="user"')
     expect(fake.isClosed).toBe(false)
 
