@@ -232,12 +232,15 @@ the agent, so they are hidden there (typed in full, they still run).
 - Claude Code may run the agent's loop again for the copy of a message it
   places later; the agent then repeats its last report, and its view shows
   `codex: nothing to run.`
-- Opening the session list (← from the prompt) moves the conversation to a
-  background session. Claude Code 2.1.287 sometimes takes it up there without
-  this mod loaded: the codex agent types are gone, and a codex agent still
-  running falls to the stand-in model, which reports that Codex did not run.
-  Restart Claude Code to get them back. No hook of the mod runs in that
-  session, so the mod cannot restore itself.
+- Opening the session list (← from the prompt) moves the conversation into a
+  background process. On macOS Claude Code 2.1.287 sometimes starts that
+  process as the Claude Code app itself, which macOS checks on its own for
+  access to Documents, Desktop and Downloads. If the plugin's folder is under
+  one of those and Claude Code has not been given access, that process cannot
+  read the plugin, so the conversation continues there without it: the codex
+  agent types are gone until you restart. A plugin installed from the
+  marketplace lives under `~/.claude` and is not affected; for a
+  `--plugin-dir` or a local marketplace, keep the folder outside those three.
 - Claude Code's task list (`/tasks`) names the stand-in's model, Haiku, for a
   codex agent; the agent's row and header show Codex's.
 - Tested on macOS with codex-cli 0.159 and Claude Code 2.1.287, in an
