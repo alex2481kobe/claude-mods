@@ -1,6 +1,9 @@
 // The messages each codex agent has passed to Codex, by agent id.
 export type CodexSent = Record<string, string[]>
 
+// The prompt each codex agent was spawned with, by agent id.
+export type CodexOpenings = Record<string, string>
+
 // A Codex CLI option a codex agent's `/codex-*` commands set, as its option
 // line names it.
 export type CodexOptionName = 'model' | 'effort' | 'sandbox' | 'ask-for-approval'
@@ -25,6 +28,6 @@ export type CodexRuns = Record<string, CodexRun>
 
 declare module 'claude-code' {
   interface PluginState {
-    codex: { sent: CodexSent; options: CodexOptions; runs: CodexRuns }
+    codex: { sent: CodexSent; openings: CodexOpenings; options: CodexOptions; runs: CodexRuns }
   }
 }

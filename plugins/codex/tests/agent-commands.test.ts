@@ -141,6 +141,31 @@ describe('commands in a codex agent', () => {
     expect((await again).report).toBe('Done, and Go on.')
   })
 
+  // As seen live: the first run stopped, then a message typed in the view,
+  // which the engine placed ahead of the spawn prompt.
+  test('a cut-off first run runs again with the spawn prompt\'s options, the new message after it', async ($, on) => {
+    const turns: ApiTurn[] = [{ role: 'user', content: [{ type: 'text', text: TASK }, { type: 'text', text: REMINDER }] }]
+    engine(on, turns)
+    on('agent.spawn', () => ({ model: 'haiku', agentId: 'a1' }))
+    const fake = codex(on, 'busy')
+    await $.agent.spawn({ subagentType: 'codex:run', prompt: TASK, description: 'Write note' } as never)
+    const stream = $.turn.step({ turnId: 't', index: 0, model: 'claude-haiku-4-5', messageCount: 1, agentId: 'a1' })
+    await stream.next()
+    await stream.return(undefined as never).catch(() => undefined)
+    for (let i = 0; i < 200 && !fake.isClosed; i++) await new Promise<void>(resolve => setTimeout(() => resolve(), 5))
+    turns.splice(0, 1,
+      { role: 'user', content: [{ type: 'text', text: 'Just reply DONE.' }, { type: 'text', text: TASK }, { type: 'text', text: REMINDER }] },
+      { role: 'user', content: [{ type: 'text', text: '[Request interrupted by user]' }] },
+    )
+    fake.argv = []
+    const again = step($, 1)
+    for (let i = 0; i < 200 && fake.prompts.length < 1; i++) await new Promise<void>(resolve => setTimeout(() => resolve(), 5))
+    expect(fake.argv).toContain('approvals_reviewer="user"')
+    expect(fake.prompts).toEqual(['Create note.txt.\n\nJust reply DONE.'])
+    await $.session.send({ to: 'writer', text: 'Go on.', origin: { kind: 'model' } } as never)
+    await again
+  })
+
   test('a run that failed was passed on: its failure is the report, and a step with nothing new does not run it again', async ($, on) => {
     const turns: ApiTurn[] = [{ role: 'user', content: [{ type: 'text', text: TASK }, { type: 'text', text: REMINDER }] }]
     engine(on, turns)

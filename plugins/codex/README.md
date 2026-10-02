@@ -204,7 +204,11 @@ agent's view.
   carried is handed back again the next time the agent's loop runs.
 - A step interrupted before Codex finished (Esc) passes nothing on: Codex is
   stopped, and the next time the agent's loop runs, the message is given to
-  Codex again. When the interruption is the session moving to the background
+  Codex again. The agent's options come from the prompt it was spawned with,
+  which the mod records at spawn, so a first task run again keeps them
+  however Claude Code places the messages sent since; the task goes first,
+  then those messages. Claude Code's interruption marker
+  (`[Request interrupted by user]`) never reaches Codex. When the interruption is the session moving to the background
   (the session list opening while the agent's first turn runs), Claude Code
   2.1.287 continues the agent in a forked session whose conversation, as the
   mod reads it, no longer holds the task, so the agent reports

@@ -1,3 +1,4 @@
+import { atom, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import { specsOf, TYPES } from './agents'
@@ -21,6 +22,11 @@ async function files($: EngineInterface): Promise<Files> {
   return { env: { CODEX_HOME, HOME, USERPROFILE }, read: path => $.fs.read(path) }
 }
 
+// The prompt each codex agent was spawned with, which carries its options:
+// the engine may later place another message ahead of it in the agent's
+// conversation, so step.ts reads the options from here.
+const openings = atom({ plugin: 'codex', key: 'openings' } as const, {})
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     for (const spec of specsOf(await codexModels(await files($)))) await $.agent.register(spec)
@@ -41,7 +47,10 @@ export const register: Register = on => {
     // answer (the mod not loaded, a resume elsewhere) is sent to it, so it
     // must be one the Anthropic API serves, never the Codex model.
     const label = labelOf(await codexConfig(await files($)), 'error' in flags ? {} : flags)
-    return next({ ...e, description: `${e.description} · ${label}` })
+    const started = await next({ ...e, description: `${e.description} · ${label}` })
+    const agentId = started.agentId
+    if (agentId) await update($, openings, all => ({ ...all, [agentId]: e.prompt }))
+    return started
   })
 
   // The transcript's Agent row names the type in words, not `codex:read`.

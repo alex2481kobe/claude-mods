@@ -11,9 +11,10 @@ export const HANDBACK = 'SubagentHandback'
 
 const SESSION = /^codex session ([0-9a-f-]{36})$/m
 
-// Text the engine adds to a subagent's loop that is not the caller's words.
+// Text the engine adds to a subagent's loop that is not the caller's words:
+// reminders, handback nudges, and the marker an interruption leaves.
 function isEngineText(text: string): boolean {
-  return text.startsWith('<system-reminder>') || text.startsWith('[handback')
+  return text.startsWith('<system-reminder>') || text.startsWith('[handback') || text.startsWith('[Request interrupted by user')
 }
 
 // A message sent to an agent may arrive wrapped in the engine's words: a
@@ -75,11 +76,14 @@ export function rowsOf(turns: readonly ApiTurn[]): Row[] {
 // are the words this request passes on, for the caller to add to `sent`.
 export type Request = { prompt: string; opening: string; texts: string[]; sessionId?: string }
 
-export function requestOf(rows: readonly Row[], sent: readonly string[]): Request | undefined {
+// `spawned` is the prompt the agent was spawned with, as recorded at spawn.
+export function requestOf(rows: readonly Row[], sent: readonly string[], spawned?: string): Request | undefined {
   const forms = rows.filter(r => r.role === 'user').flatMap(r => r.texts).map(formOf)
-  // The opening carries the agent's options. The first text passed to Codex
-  // is the true one; the engine may later place another message ahead of it.
-  const opening = sent[0] ?? forms[0]?.words
+  // The opening carries the agent's options: the spawn prompt as recorded,
+  // since the engine may place a later message ahead of it, even before it
+  // is first passed on (a first run cut off). Unrecorded (an agent spawned
+  // before the mod loaded), the first text passed to Codex, else the first.
+  const opening = spawned?.trim() ?? sent[0] ?? forms[0]?.words
   if (opening === undefined) return undefined
 
   // Where each copy of the same words stands, wrapped and as typed.
@@ -99,6 +103,9 @@ export function requestOf(rows: readonly Row[], sent: readonly string[]): Reques
   }
   const texts = left.sort((a, b) => a.at - b.at).map(copy => copy.words)
   if (texts.length === 0) return undefined
+  // Until the opening is passed on, it is what Codex reads first.
+  const at = texts.indexOf(opening)
+  if (at > 0 && !sent.includes(opening)) texts.unshift(...texts.splice(at, 1))
 
   let sessionId: string | undefined
   for (const row of rows) {

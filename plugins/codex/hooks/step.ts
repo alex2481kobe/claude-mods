@@ -44,9 +44,11 @@ export function closeHeld(): void {
   held.clear()
 }
 
-// What each codex agent has passed to Codex, so a message is sent once; what
-// its commands set; and what Codex last reported running it with.
+// What each codex agent has passed to Codex, so a message is sent once; the
+// prompt it was spawned with (register.ts records it); what its commands
+// set; and what Codex last reported running it with.
 const sent = atom({ plugin: 'codex', key: 'sent' } as const, {})
+const openings = atom({ plugin: 'codex', key: 'openings' } as const, {})
 const options = atom({ plugin: 'codex', key: 'options' } as const, {})
 const runs = atom({ plugin: 'codex', key: 'runs' } as const, {})
 
@@ -124,7 +126,7 @@ export const step: Hook<'turn.step'> = async function* ($, e, next) {
   const api = await $.session.messages({ as: 'api', agentId })
   if ('deny' in api) throw new Error(api.deny)
   const rows = rowsOf(api)
-  const request = requestOf(rows, (await read($, sent))[agentId] ?? [])
+  const request = requestOf(rows, (await read($, sent))[agentId] ?? [], (await read($, openings))[agentId])
   // Codex's progress is the transcript's text; the report goes back with a
   // handback call, or as the final text where the loop has no such tool.
   const handback = handsBack(rows)

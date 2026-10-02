@@ -150,6 +150,18 @@ describe('reporting', () => {
 })
 
 describe('options', () => {
+  test('the opening is the spawn prompt as recorded, and goes first while it is unsent, wherever the engine placed a later message', () => {
+    // As a live run placed it: the first run was cut off, then a message
+    // typed in the view landed ahead of the spawn prompt.
+    const rows = rowsOf([user('Just reply DONE.', TASK, REMINDER), user('[Request interrupted by user]')])
+    expect(requestOf(rows, [], TASK)).toEqual({ prompt: `${TASK}\n\nJust reply DONE.`, opening: TASK, texts: [TASK, 'Just reply DONE.'], sessionId: undefined })
+  })
+
+  test('the engine\'s interruption marker is no request', () => {
+    expect(requestOf(rowsOf([user(TASK), ran(), delivered(), user('[Request interrupted by user]')]), [TASK], TASK)).toBeUndefined()
+  })
+
+
   test('the opening is the first text passed to Codex, even when the engine places a later one ahead of it', () => {
     const rows = rowsOf([user(QUEUED, TASK), ran(), delivered()])
     expect(requestOf(rows, [TASK])).toMatchObject({ opening: TASK, prompt: 'Also count the lines.' })
