@@ -1,14 +1,11 @@
 // What a codex agent's loop is being asked: every message in its conversation
-// whose words have not yet been passed to Codex. Position is no guide, since
-// the engine may fold a message queued while Codex ran into an earlier turn,
-// so the caller keeps the words already passed on (`sent`). Words are passed
-// once: the engine delivers some messages again (the spawn prompt when the
-// user writes in the agent's view, a queued message after its turn), and
-// nothing tells such a delivery from the same words sent again. A `/codex-`
-// command is answered each time it is sent, by count: one more of it in the
-// conversation than in `sent` is a new one.
-
-import { isCommand } from './commands'
+// not yet passed on. Position is no guide, since the engine moves messages
+// (a message sent while the agent runs is placed twice: wrapped, in its
+// first turn even ahead of the spawn prompt, and as typed, maybe a turn
+// later), so the caller keeps the words already passed on (`sent`) and
+// messages are counted: the same words count as often as they stand in the
+// form, wrapped or as typed, that holds them more often. Sent twice, they are
+// asked twice.
 
 export const HANDBACK = 'SubagentHandback'
 
@@ -27,8 +24,10 @@ function isEngineText(text: string): boolean {
 // as it was sent.
 const WRAPPED = /^[^\n]* sent a (?:new )?message while you were working:\n([\s\S]*)\n\n[^\n]+$/
 
-export function sentAs(text: string): string {
-  return WRAPPED.exec(text.trim())?.[1] ?? text.trim()
+// The sender's words, and whether the engine wrapped them.
+export function formOf(text: string): { words: string; isWrapped: boolean } {
+  const wrapped = WRAPPED.exec(text.trim())?.[1]
+  return wrapped === undefined ? { words: text.trim(), isWrapped: false } : { words: wrapped, isWrapped: true }
 }
 
 // One turn of the conversation: its words, and its tool calls with whether
@@ -77,19 +76,21 @@ export function rowsOf(turns: readonly ApiTurn[]): Row[] {
 export type Request = { prompt: string; opening: string; texts: string[]; sessionId?: string }
 
 export function requestOf(rows: readonly Row[], sent: readonly string[]): Request | undefined {
-  const asked = rows.filter(r => r.role === 'user').flatMap(r => r.texts).map(sentAs)
+  const forms = rows.filter(r => r.role === 'user').flatMap(r => r.texts).map(formOf)
   // The opening carries the agent's options. The first text passed to Codex
   // is the true one; the engine may later place another message ahead of it.
-  const opening = sent[0] ?? asked[0]
+  const opening = sent[0] ?? forms[0]?.words
   if (opening === undefined) return undefined
 
-  const left = [...sent]
-  const texts = asked.filter((text, i) => {
-    if (!isCommand(text)) return !sent.includes(text) && asked.indexOf(text) === i
-    const at = left.indexOf(text)
-    if (at === -1) return true
-    left.splice(at, 1)
-    return false
+  const counts = new Map<string, { wrapped: number; typed: number }>()
+  for (const { words, isWrapped } of forms) {
+    const count = counts.get(words) ?? { wrapped: 0, typed: 0 }
+    count[isWrapped ? 'wrapped' : 'typed']++
+    counts.set(words, count)
+  }
+  const texts = [...counts].flatMap(([words, { wrapped, typed }]) => {
+    const left = Math.max(wrapped, typed) - sent.filter(text => text === words).length
+    return Array<string>(Math.max(0, left)).fill(words)
   })
   if (texts.length === 0) return undefined
 

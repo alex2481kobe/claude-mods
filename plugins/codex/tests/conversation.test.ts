@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { HANDBACK, handsBack, lastReport, requestOf, rowsOf, sentAs, type ApiTurn } from '../hooks/request'
+import { HANDBACK, formOf, handsBack, lastReport, requestOf, rowsOf, type ApiTurn } from '../hooks/request'
 
 // Shapes as an agent's conversation holds them in API form.
 const SESSION = '01a0f92d-0000-7000-8000-000000000000'
@@ -72,10 +72,10 @@ describe('requests', () => {
   })
 
   test('every engine wrapper reaches Codex as the sender\'s own words, blank lines kept', () => {
-    expect(sentAs(FROM_USER('What is the last word?\n\nOf app.js.'))).toBe('What is the last word?\n\nOf app.js.')
-    expect(sentAs(QUEUED)).toBe('Also count the lines.')
-    expect(sentAs(FROM_SESSION('<agent-message from="a1">\nreview done\n</agent-message>'))).toBe('<agent-message from="a1">\nreview done\n</agent-message>')
-    expect(sentAs('Say: the user sent a message while you were working:\nno')).toBe('Say: the user sent a message while you were working:\nno')
+    expect(formOf(FROM_USER('What is the last word?\n\nOf app.js.')).words).toBe('What is the last word?\n\nOf app.js.')
+    expect(formOf(QUEUED).words).toBe('Also count the lines.')
+    expect(formOf(FROM_SESSION('<agent-message from="a1">\nreview done\n</agent-message>')).words).toBe('<agent-message from="a1">\nreview done\n</agent-message>')
+    expect(formOf('Say: the user sent a message while you were working:\nno').words).toBe('Say: the user sent a message while you were working:\nno')
   })
 
   test('the spawn prompt the engine re-sends when the user messages from the view is not run again', () => {
@@ -91,9 +91,22 @@ describe('requests', () => {
     expect(requestOf(rows, [TASK, '/codex-status', '/codex-status'])).toBeUndefined()
   })
 
-  test('a queued message the engine delivers again after its turn is not run again', () => {
-    const rows = rowsOf([user(TASK, QUEUED, REMINDER), ran(), delivered(false, FROM_USER('Also count the lines.'))])
+  test('a queued message the engine places again in a later turn, as typed, is not run again', () => {
+    const rows = rowsOf([user(TASK, REMINDER), ran(), delivered(false, FROM_USER('Also count the lines.')), ran(), delivered(false, 'Also count the lines.\n')])
     expect(requestOf(rows, [TASK, 'Also count the lines.'])).toBeUndefined()
+  })
+
+  test('messages queued in the view, wrapped ahead of the spawn prompt and typed after it, are each asked once', () => {
+    // As a live run placed two queued messages: the wrapped copies hoisted
+    // into the first turn, the typed copies after the spawn prompt and later.
+    const rows = rowsOf([user(FROM_USER('/codex-effort high'), FROM_USER('Say GAMMA.'), TASK, REMINDER, '/codex-effort high\n'), ran(false), user('Say GAMMA.')])
+    expect(requestOf(rows, [TASK])).toMatchObject({ texts: ['/codex-effort high', 'Say GAMMA.'] })
+    expect(requestOf(rows, [TASK, '/codex-effort high', 'Say GAMMA.'])).toBeUndefined()
+  })
+
+  test('the same words sent again are asked again', () => {
+    expect(requestOf(rowsOf([user(TASK), ran(false), user('go'), user('go')]), [TASK, 'go'])).toMatchObject({ texts: ['go'] })
+    expect(requestOf(rowsOf([user(TASK), ran(false), user(FROM_USER('go')), user(FROM_USER('go'))]), [TASK, 'go'])).toMatchObject({ texts: ['go'] })
   })
 })
 
