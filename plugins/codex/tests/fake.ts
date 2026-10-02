@@ -15,19 +15,19 @@ export const TASK = 'model: gpt-6-luna\nsandbox: read-only\nask-for-approval: on
 export const INSTALL = 'needs the Codex CLI with `codex app-server`'
 export const REMINDER = `<system-reminder>\nYour final report is delivered through ${HANDBACK}.\n</system-reminder>`
 
-type Fake = { argv: string[]; decisions: unknown[]; isClosed: boolean; writesAfterClose: number }
+type Fake = { argv: string[]; prompts: string[]; decisions: unknown[]; isClosed: boolean; writesAfterClose: number }
 
-// How the stand-in ends: answers and finishes (`ok`), dies while its question
-// waits (`crash`), or the shell finds no app-server, no codex, or Codex fails
-// on its own "not found".
-export type Mode = 'ok' | 'crash' | 'no-app-server' | 'no-codex' | 'config-not-found'
+// How the stand-in ends: answers and finishes (`ok`), finishes without asking
+// (`quiet`), dies while its question waits (`crash`), or the shell finds no
+// app-server, no codex, or Codex fails on its own "not found".
+export type Mode = 'ok' | 'quiet' | 'crash' | 'no-app-server' | 'no-codex' | 'config-not-found'
 
 // A stand-in for `codex app-server` behind the mod's shell: it reads the
 // mod's JSON-RPC from the FIFO, answers it on stdout, asks for one approval
 // in its turn, and finishes the turn once that is answered. The FIFO is there
 // only while it runs, as the shell removes it on the way out.
 export function codex(on: On, mode: Mode = 'ok'): Fake {
-  const fake: Fake = { argv: [], decisions: [], isClosed: false, writesAfterClose: 0 }
+  const fake: Fake = { argv: [], prompts: [], decisions: [], isClosed: false, writesAfterClose: 0 }
   const out: string[] = []
   let wake: (() => void) | undefined
   const send = (message: object) => {
@@ -71,8 +71,16 @@ export function codex(on: On, mode: Mode = 'ok'): Fake {
     for (const line of e.text.split('\n').filter(Boolean)) {
       const m = JSON.parse(line)
       if (m.method === 'initialize') send({ id: m.id, result: {} })
-      if (m.method === 'thread/start' || m.method === 'thread/resume') send({ id: m.id, result: { thread: { id: 'th1' } } })
-      if (m.method === 'turn/start') {
+      if (m.method === 'thread/start' || m.method === 'thread/resume') {
+        send({ id: m.id, result: { thread: { id: 'th1' }, model: 'gpt-6-luna', reasoningEffort: 'low', sandbox: { type: 'workspaceWrite' }, approvalPolicy: 'on-request' } })
+      }
+      if (m.method === 'turn/start') fake.prompts.push(m.params.input[0].text)
+      if (m.method === 'turn/start' && mode === 'quiet') {
+        send({ id: m.id, result: { turn: { id: 't1' } } })
+        send({ method: 'thread/tokenUsage/updated', params: { threadId: 'th1', tokenUsage: { total: { inputTokens: 1500, cachedInputTokens: 1000, outputTokens: 40 }, last: { inputTokens: 1500, cachedInputTokens: 1000, outputTokens: 40 } } } })
+        send({ method: 'item/completed', params: { threadId: 'th1', item: { type: 'agentMessage', text: 'Counted.' } } })
+        send({ method: 'turn/completed', params: { threadId: 'th1', turn: { status: 'completed' } } })
+      } else if (m.method === 'turn/start') {
         send({ id: m.id, result: { turn: { id: 't1' } } })
         send({ id: 0, method: 'item/commandExecution/requestApproval', params: { threadId: 'th1', command: "/bin/zsh -lc 'printf hi > note.txt'", cwd: '/work' } })
         asked = true

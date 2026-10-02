@@ -4,6 +4,8 @@
 
 import type { ModelUsage } from 'claude-code'
 
+import type { CodexRun } from '../types'
+
 export type Run = {
   threadId?: string
   answer?: string
@@ -12,6 +14,20 @@ export type Run = {
   isDone?: boolean
   // The thread's token total before this turn's first request.
   before?: ModelUsage
+  // The thread's token total as Codex counts it, cached tokens inside input.
+  tokens?: CodexRun['tokens']
+}
+
+// What a thread/start or thread/resume answer says the session runs with.
+export function reportOf(answer: any): Omit<CodexRun, 'tokens'> {
+  const policy = answer?.approvalPolicy
+  return {
+    threadId: String(answer?.thread?.id),
+    model: String(answer?.model),
+    effort: answer?.reasoningEffort ?? null,
+    sandbox: String(answer?.sandbox?.type ?? 'unknown').replace(/[A-Z]/g, c => `-${c.toLowerCase()}`),
+    approvals: typeof policy === 'string' ? policy : JSON.stringify(policy),
+  }
 }
 
 // Codex counts cached tokens inside `inputTokens`; the engine's shape counts
@@ -70,6 +86,8 @@ export function apply(run: Run, method: string, params: any): string | undefined
     case 'thread/tokenUsage/updated': {
       // The thread's running total, less what it held before this turn.
       const total = usageOf(params.tokenUsage?.total)
+      const raw = params.tokenUsage?.total
+      run.tokens = { input: Number(raw?.inputTokens) || 0, cached: Number(raw?.cachedInputTokens) || 0, output: Number(raw?.outputTokens) || 0 }
       run.before ??= minus(total, usageOf(params.tokenUsage?.last))
       run.usage = minus(total, run.before)
       return undefined

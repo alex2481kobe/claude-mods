@@ -1,0 +1,80 @@
+import type { CodexOptionName, CodexRun } from '../types'
+import { APPROVALS, flagsOf, SANDBOXES, type Pin } from './flags'
+
+// `/codex-*` messages, which a codex agent answers itself and never passes to
+// Codex: settings for its next Codex turns, its status, and help. They are
+// typed in the agent's view, where Claude Code hands a command it does not
+// know to the agent as a message. A setting is the Codex option line it
+// names, so it is checked by the option rules and the agent type's pin.
+
+export type Options = Partial<Record<CodexOptionName, string>>
+
+// The reply, and the agent's settings when the command changed them.
+export type Answer = { reply: string; options?: Options }
+
+const SETTINGS: Record<string, { option: CodexOptionName; value: string }> = {
+  model: { option: 'model', value: '<id>' },
+  effort: { option: 'effort', value: '<level>' },
+  sandbox: { option: 'sandbox', value: `<${SANDBOXES.join('|')}>` },
+  approvals: { option: 'ask-for-approval', value: `<${APPROVALS.join('|')}>` },
+}
+
+const NAMES = [...Object.keys(SETTINGS), 'status', 'help'].map(name => `/codex-${name}`)
+
+const HELP = [
+  'Codex commands for this agent (a setting applies from its next Codex turn):',
+  ...Object.entries(SETTINGS).map(([name, { value }]) => `  /codex-${name} ${value}`),
+  '  /codex-status   what Codex runs with, the session and its tokens',
+  '  /codex-help     this list',
+].join('\n')
+
+// The footer hint while a codex agent's view is open.
+export const HINT = NAMES.join(' ')
+
+const COMMAND = /^\/codex-(\S*)(?:\s+([\s\S]*))?$/
+
+export function isCommand(text: string): boolean {
+  return text.trimStart().startsWith('/codex-')
+}
+
+export function answerOf(text: string, options: Options, pin: Pin | undefined, run: CodexRun | undefined): Answer {
+  const match = COMMAND.exec(text.trim())
+  const name = match?.[1] ?? ''
+  const value = (match?.[2] ?? '').trim()
+  if (name === 'status') return { reply: statusOf(options, run) }
+  const setting = SETTINGS[name]
+  if (!setting || value === '') {
+    const why = name === 'help' ? '' : setting ? `codex: /codex-${name} needs a value.\n\n` : `codex: no /codex-${name}.\n\n`
+    return { reply: `${why}${HELP}` }
+  }
+  const parsed = flagsOf(`${setting.option}: ${value}`, pin)
+  if ('error' in parsed) return { reply: `codex: ${parsed.error}` }
+  if (parsed.prompt !== '') return { reply: `codex: /codex-${name} takes one plain value, not "${value}".` }
+  return { reply: `codex: ${name} ${value} from the next Codex turn.`, options: { ...options, [setting.option]: value } }
+}
+
+// The settings as the option lines they are, for the next Codex turn.
+export function optionLines(options: Options): string {
+  return Object.entries(options)
+    .map(([name, value]) => `${name}: ${value}`)
+    .join('\n')
+}
+
+const count = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+
+function statusOf(options: Options, run: CodexRun | undefined): string {
+  const now: Record<CodexOptionName, string | undefined> = {
+    model: run?.model,
+    effort: run ? (run.effort ?? 'default') : undefined,
+    sandbox: run?.sandbox,
+    'ask-for-approval': run?.approvals,
+  }
+  const rows = Object.entries(SETTINGS).flatMap(([name, { option }]) => {
+    const next = options[option]
+    if (next !== undefined && next !== now[option]) return [`${name.padEnd(10)}${next} from the next Codex turn${now[option] ? ` (now ${now[option]})` : ''}`]
+    return now[option] ? [`${name.padEnd(10)}${now[option]}`] : []
+  })
+  if (!run) return ['codex: no Codex turn yet.', ...rows].join('\n')
+  const { input, cached, output } = run.tokens
+  return [...rows, `${'session'.padEnd(10)}${run.threadId}`, `${'tokens'.padEnd(10)}${count(input)} in (${count(cached)} cached), ${count(output)} out`].join('\n')
+}
