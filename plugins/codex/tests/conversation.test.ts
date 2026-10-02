@@ -53,6 +53,11 @@ describe('requests', () => {
     expect(request).toMatchObject({ prompt: 'decline', texts: ['decline'] })
   })
 
+  test('a queued message placed both wrapped and as typed, with a trailing newline, reaches Codex once', () => {
+    const rows = rowsOf([user(TASK), ran(false), user(FROM_USER('Say ALPHA.'), 'Say ALPHA.\n', FROM_USER('Say BETA.'))])
+    expect(requestOf(rows, [TASK])).toMatchObject({ prompt: 'Say ALPHA.\n\nSay BETA.', texts: ['Say ALPHA.', 'Say BETA.'] })
+  })
+
   test('an engine nudge is no request', () => {
     expect(requestOf(rowsOf([user(TASK), ran(), delivered(false, '[handback-send-enforce] Your report has not been delivered.')]), [TASK])).toBeUndefined()
   })

@@ -28,7 +28,7 @@ function isEngineText(text: string): boolean {
 const WRAPPED = /^[^\n]* sent a (?:new )?message while you were working:\n([\s\S]*)\n\n[^\n]+$/
 
 export function sentAs(text: string): string {
-  return WRAPPED.exec(text.trim())?.[1] ?? text
+  return WRAPPED.exec(text.trim())?.[1] ?? text.trim()
 }
 
 // One turn of the conversation: its words, and its tool calls with whether
