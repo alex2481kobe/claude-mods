@@ -8,7 +8,7 @@ import { apply, reportOf, type Run } from './events'
 import { flagsOf, type Flags, type Pin } from './flags'
 import { labelOf } from './model'
 import { expiredAnswer, questionOf, replyOf, type Asked } from './questions'
-import { HANDBACK, handsBack, lastAnswer, lastReport, requestOf, rowsOf } from './request'
+import { HANDBACK, handsBack, lastAnswer, requestOf, rowsOf, undeliveredReport } from './request'
 import { NO_CODEX, open, type Server } from './server'
 import { openView, setReply } from './view'
 
@@ -213,7 +213,10 @@ export const step: Hook<'turn.step'> = async function* ($, e, next) {
     } finally {
       working.delete(agentId)
       if (server && !held.has(agentId)) server.close()
-      await update($, sent, all => ({ ...all, [agentId]: [...(all[agentId] ?? []), ...request.texts] }))
+      // A step cut off (interrupted, or closed) before Codex finished, asked or
+      // failed has passed nothing on: the next step runs it again.
+      const isCutOff = asked.length > 0 && !run.isDone && !question && !run.error
+      if (!isCutOff) await update($, sent, all => ({ ...all, [agentId]: [...(all[agentId] ?? []), ...request.texts] }))
       // What Codex reported this session runs with, and its token total.
       await update($, runs, all => {
         const base = report ?? all[agentId]
@@ -231,12 +234,11 @@ export const step: Hook<'turn.step'> = async function* ($, e, next) {
         ? `${run.answer ? `${run.answer}\n\n` : ''}codex failed: ${run.error}`
         : (run.answer ?? 'codex: the turn ended without a message.')
       : undefined
-  // With nothing new, the engine has run the loop again for a message already
-  // passed on: the report it gave stands. Where reports go as text, a failed
-  // handback's report is given again, as that text is the report.
+  // With nothing new, the engine has run the loop again: a report that never
+  // reached the caller is given again, and otherwise the loop says only that.
   const message = request
     ? [...replies, ...(codexSaid ? [codexSaid] : [])].join('\n\n')
-    : ((!handback && lastReport(rows)) || 'codex: nothing new was sent to this agent, so Codex was not asked; its last report stands.')
+    : (undeliveredReport(rows) ?? 'codex: nothing new to send to Codex.')
   if (!handback) {
     // The session line lets a follow-up resume this run (see requestOf).
     const text = run.threadId ? `${message}\n\ncodex session ${run.threadId}` : message

@@ -40,7 +40,9 @@ export function codex(on: On, mode: Mode = 'ok'): Fake {
     wake?.()
   }
   on('process.spawn', async function* (_$, e) {
+    // Each spawn is a new app-server, open until it ends.
     fake.argv = [...e.argv]
+    fake.isClosed = false
     if (mode === 'no-codex') {
       fake.isClosed = true
       yield { stream: 'stderr' as const, text: 'codex-mod: codex: command not found\n' }

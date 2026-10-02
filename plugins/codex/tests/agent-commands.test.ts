@@ -3,6 +3,9 @@ import { describe, expect, test } from 'claude-code/testing'
 import { HANDBACK, type ApiTurn } from '../hooks/request'
 import { codex, engine, REMINDER, step, TASK, THREAD } from './fake'
 
+// The test runner has timers; the mod's own environment declares none.
+declare const setTimeout: (run: () => void, ms: number) => unknown
+
 // A message typed in the agent's view, as the engine wraps it.
 const typed = (text: string) =>
   `The user sent a new message while you were working:\n${text}\n\nThis is how Claude Code surfaces messages the user sends mid-turn — within the running turn, often alongside the next tool result, rather than as a separate conversation turn. Address the message above as you continue this turn.`
@@ -79,8 +82,7 @@ describe('commands in a codex agent', () => {
     fake.argv = []
     const again = await step($, 1)
     expect(fake.argv).toEqual([])
-    expect(again.report).not.toContain('Counted.')
-    expect(again.report).toMatch(/^codex: /)
+    expect(again.report).toBe('codex: nothing new to send to Codex.')
   })
 
   test('where a handback failed for want of the tool, the last report is given again as text', async ($, on) => {
@@ -96,6 +98,60 @@ describe('commands in a codex agent', () => {
     const again = await step($, 1)
     expect(fake.argv).toEqual([])
     expect(again.report).toBe('Counted.')
+  })
+
+  // As seen live: the session moving host interrupts the agent's handback,
+  // which never reaches the caller; Claude Code then runs the loop again.
+  test('with nothing new after a handback that was not delivered, that report is handed back again', async ($, on) => {
+    const turns: ApiTurn[] = [{ role: 'user', content: [{ type: 'text', text: TASK }, { type: 'text', text: REMINDER }] }]
+    engine(on, turns)
+    const fake = codex(on, 'quiet')
+    const done = await step($, 0)
+    turns.push(
+      { role: 'assistant', content: [{ type: 'text', text: done.text }, { type: 'tool_use', id: 'h1', name: HANDBACK, input: { message: done.report } }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'h1', content: "The user doesn't want to take this action right now. STOP what you are doing and wait for the user to tell you how to proceed." }] },
+    )
+    fake.argv = []
+    const again = await step($, 1)
+    expect(fake.argv).toEqual([])
+    expect(again.report).toBe('Counted.')
+  })
+
+  test('a step cut off before Codex finished leaves its task unsent, so the next step runs it', async ($, on) => {
+    const turns: ApiTurn[] = [{ role: 'user', content: [{ type: 'text', text: TASK }, { type: 'text', text: REMINDER }] }]
+    engine(on, turns)
+    const fake = codex(on, 'busy')
+    const stream = $.turn.step({ turnId: 't', index: 0, model: 'claude-haiku-4-5', messageCount: 1, agentId: 'a1' })
+    // The session's header is out, Codex not yet given the task: the step is closed.
+    const first = await stream.next()
+    expect(first.done).toBe(false)
+    await stream.return(undefined as never).catch(() => undefined)
+    for (let i = 0; i < 200 && !fake.isClosed; i++) await new Promise<void>(resolve => setTimeout(() => resolve(), 5))
+    expect(fake.isClosed).toBe(true)
+    // Claude Code runs the loop again, on the same conversation: Codex is
+    // given the task again (here finished by a message steered into it).
+    fake.argv = []
+    const again = step($, 1)
+    for (let i = 0; i < 200 && fake.prompts.length < 1; i++) await new Promise<void>(resolve => setTimeout(() => resolve(), 5))
+    expect(fake.prompts).toEqual(['Create note.txt.'])
+    expect(await $.session.send({ to: 'writer', text: 'Go on.', origin: { kind: 'model' } } as never)).toEqual({ isDelivered: true })
+    expect((await again).report).toBe('Done, and Go on.')
+  })
+
+  test('a run that failed was passed on: its failure is the report, and a step with nothing new does not run it again', async ($, on) => {
+    const turns: ApiTurn[] = [{ role: 'user', content: [{ type: 'text', text: TASK }, { type: 'text', text: REMINDER }] }]
+    engine(on, turns)
+    const fake = codex(on, 'no-codex')
+    const done = await step($, 0)
+    expect(done.report).toMatch(/^codex failed: /)
+    turns.push(
+      { role: 'assistant', content: [{ type: 'text', text: done.text }, { type: 'tool_use', id: 'h1', name: HANDBACK, input: { message: done.report } }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'h1', content: 'Report delivered to your caller.' }] },
+    )
+    fake.argv = []
+    const again = await step($, 1)
+    expect(fake.argv).toEqual([])
+    expect(again.report).toBe('codex: nothing new to send to Codex.')
   })
 
   test('after the person interrupts a handback, the next run still reports through the handback tool', async ($, on) => {

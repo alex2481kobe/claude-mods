@@ -199,7 +199,13 @@ agent's view.
   two and ends Codex and the folder.
 - Codex's final message, or its question, goes back as the agent's report:
   through the `SubagentHandback` tool in an interactive session, or as the
-  final text where that tool does not exist (headless, SDK).
+  final text where that tool does not exist (headless, SDK). A handback you
+  interrupt (Esc in the agent's view) does not change that; the report it
+  carried is handed back again the next time the agent's loop runs.
+- A step interrupted before Codex finished (Esc, or the session moving to
+  the background as the session list opens) passes nothing on: Codex is
+  stopped, and the next time the agent's loop runs, the message is given to
+  Codex again.
 - Codex runs only while it works or waits on a question. Every message sent to
   the agent is passed to Codex once, in the sender's own words: as the answer
   to a waiting question, added to Codex's running turn (`turn/steer`, for a
@@ -240,9 +246,10 @@ agent's view.
   agent got.
 - Claude Code may run the agent's loop again for the copy of a message it
   places later. Codex is not asked again, but the loop has to report, so
-  Claude gets a one-line report that nothing new was sent, and the view shows
-  `codex: nothing to run.` (Ending without a report would have Claude Code
-  tell Claude that no report came and to message the agent for one.)
+  Claude gets the one line `codex: nothing new to send to Codex.`, and the
+  view shows `codex: nothing to run.` (Ending without a report would have
+  Claude Code tell Claude that no report came and to message the agent for
+  one.)
 - Opening the session list (← from the prompt) moves the conversation into a
   background process. On macOS Claude Code 2.1.287 sometimes starts that
   process as the Claude Code app itself, which macOS checks on its own for

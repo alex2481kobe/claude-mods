@@ -127,16 +127,20 @@ export function handsBack(rows: readonly Row[]): boolean {
   return !rows.some(r => r.toolUses.some(u => u.tool === HANDBACK && u.result?.includes(NO_SUCH_TOOL)))
 }
 
-// The report of the last handback the loop sent, to repeat it as text when
-// the call failed.
-export function lastReport(rows: readonly Row[]): string | undefined {
-  let report: string | undefined
+// Claude Code's result for a handback that reached the caller.
+const DELIVERED = 'Report delivered'
+
+// The report of the last handback the loop sent, unless it was delivered: a
+// handback that failed (no such tool) or was interrupted never reached the
+// caller, so it is given again.
+export function undeliveredReport(rows: readonly Row[]): string | undefined {
+  let last: Row['toolUses'][number] | undefined
   for (const row of rows) {
     for (const use of row.toolUses) {
-      if (use.tool === HANDBACK && typeof use.input.message === 'string') report = use.input.message
+      if (use.tool === HANDBACK && typeof use.input.message === 'string') last = use
     }
   }
-  return report
+  return last && !last.result?.startsWith(DELIVERED) ? (last.input.message as string) : undefined
 }
 
 // What the agent last reported: its last turn's handback, or its text where

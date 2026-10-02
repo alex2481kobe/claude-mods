@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { HANDBACK, formOf, handsBack, lastReport, requestOf, rowsOf, type ApiTurn } from '../hooks/request'
+import { HANDBACK, formOf, handsBack, undeliveredReport, requestOf, rowsOf, type ApiTurn } from '../hooks/request'
 
 // Shapes as an agent's conversation holds them in API form.
 const SESSION = '01a0f92d-0000-7000-8000-000000000000'
@@ -145,7 +145,7 @@ describe('reporting', () => {
   })
 
   test('the failed handback\'s report is kept to send as text', () => {
-    expect(lastReport(rowsOf([user(TASK), ran(), delivered(true)]))).toBe('the list')
+    expect(undeliveredReport(rowsOf([user(TASK), ran(), delivered(true)]))).toBe('the list')
   })
 })
 
