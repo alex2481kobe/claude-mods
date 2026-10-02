@@ -23,6 +23,13 @@ describe('agent types', () => {
     for (const r of registered) expect(r.description).toContain('models: gpt-6.1-sol, gpt-6-astra')
   })
 
+  test('with no Codex model cache (a fresh install) the descriptions name no models and still read whole', () => {
+    for (const { description } of specsOf([])) {
+      expect(description).not.toContain('models:')
+      expect(description).toContain('(`model: <id>`, `effort: <level>`); left out, Codex uses its own config.')
+    }
+  })
+
   test('a spawned agent is labelled with the model and effort it will run on', async ($, on) => {
     mock.env(on, { HOME: '/home/me' })
     on('fs.read', (_$, e) => ({ value: FILES[e.path] ?? '' }))

@@ -17,10 +17,12 @@ export function configOf(toml: string): Choice {
   return choice
 }
 
-// `Sol 6.1 (high)`: the chosen model and effort over the config's.
+// `Sol 6.1 (high)`: the chosen model and effort over the config's. With
+// neither naming a model, Codex picks its own; which one is known only once
+// Codex runs (each turn's header names it), so the label says so.
 export function labelOf(config: Choice, options: Choice): string {
   const id = options.model ?? config.model
-  const model = id ? nameOf(id) : 'default model'
+  const model = id ? nameOf(id) : 'Codex default'
   const effort = options.effort ?? config.effort
   return effort ? `${model} (${effort})` : model
 }
