@@ -5,7 +5,7 @@
 // later), so the caller keeps the words already passed on (`sent`) and
 // messages are counted: the same words count as often as they stand in the
 // form, wrapped or as typed, that holds them more often. Sent twice, they are
-// asked twice.
+// asked twice. The copies not yet passed on go in the order they stand.
 
 export const HANDBACK = 'SubagentHandback'
 
@@ -27,7 +27,7 @@ const WRAPPED = /^[^\n]* sent a (?:new )?message while you were working:\n([\s\S
 // The sender's words, and whether the engine wrapped them.
 export function formOf(text: string): { words: string; isWrapped: boolean } {
   const wrapped = WRAPPED.exec(text.trim())?.[1]
-  return wrapped === undefined ? { words: text.trim(), isWrapped: false } : { words: wrapped, isWrapped: true }
+  return wrapped === undefined ? { words: text.trim(), isWrapped: false } : { words: wrapped.trim(), isWrapped: true }
 }
 
 // One turn of the conversation: its words, and its tool calls with whether
@@ -82,16 +82,22 @@ export function requestOf(rows: readonly Row[], sent: readonly string[]): Reques
   const opening = sent[0] ?? forms[0]?.words
   if (opening === undefined) return undefined
 
-  const counts = new Map<string, { wrapped: number; typed: number }>()
-  for (const { words, isWrapped } of forms) {
-    const count = counts.get(words) ?? { wrapped: 0, typed: 0 }
-    count[isWrapped ? 'wrapped' : 'typed']++
-    counts.set(words, count)
-  }
-  const texts = [...counts].flatMap(([words, { wrapped, typed }]) => {
-    const left = Math.max(wrapped, typed) - sent.filter(text => text === words).length
-    return Array<string>(Math.max(0, left)).fill(words)
+  // Where each copy of the same words stands, wrapped and as typed.
+  const places = new Map<string, { wrapped: number[]; typed: number[] }>()
+  forms.forEach(({ words, isWrapped }, at) => {
+    const place = places.get(words) ?? { wrapped: [], typed: [] }
+    place[isWrapped ? 'wrapped' : 'typed'].push(at)
+    places.set(words, place)
   })
+  // The copies not yet passed on are the latest ones, in the form that holds
+  // more; they go in the order they stand in.
+  const left: { at: number; words: string }[] = []
+  for (const [words, { wrapped, typed }] of places) {
+    const copies = wrapped.length >= typed.length ? wrapped : typed
+    const count = Math.max(0, copies.length - sent.filter(text => text === words).length)
+    for (const at of copies.slice(copies.length - count)) left.push({ at, words })
+  }
+  const texts = left.sort((a, b) => a.at - b.at).map(copy => copy.words)
   if (texts.length === 0) return undefined
 
   let sessionId: string | undefined

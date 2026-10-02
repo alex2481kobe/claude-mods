@@ -104,6 +104,21 @@ describe('requests', () => {
     expect(requestOf(rows, [TASK, '/codex-effort high', 'Say GAMMA.'])).toBeUndefined()
   })
 
+  test('words sent before, then a new message and the repeat, reach Codex in the order they came', () => {
+    const rows = rowsOf([user(TASK), ran(false), user('yes'), ran(false), user('continue'), user('yes')])
+    expect(requestOf(rows, [TASK, 'yes'])?.texts).toEqual(['continue', 'yes'])
+  })
+
+  test('two queued messages keep their order when only the first one\'s typed copy has been placed yet', () => {
+    const rows = rowsOf([user(TASK), ran(false), user(FROM_USER('Say A.'), FROM_USER('Say B.'), 'Say A.')])
+    expect(requestOf(rows, [TASK])?.texts).toEqual(['Say A.', 'Say B.'])
+  })
+
+  test('a wrapped message whose words end in a newline is the same message as its typed copy', () => {
+    const rows = rowsOf([user(TASK), ran(false), user(FROM_USER('Say ALPHA.\n'), 'Say ALPHA.\n')])
+    expect(requestOf(rows, [TASK])?.texts).toEqual(['Say ALPHA.'])
+  })
+
   test('the same words sent again are asked again', () => {
     expect(requestOf(rowsOf([user(TASK), ran(false), user('go'), user('go')]), [TASK, 'go'])).toMatchObject({ texts: ['go'] })
     expect(requestOf(rowsOf([user(TASK), ran(false), user(FROM_USER('go')), user(FROM_USER('go'))]), [TASK, 'go'])).toMatchObject({ texts: ['go'] })
