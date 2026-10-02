@@ -1,6 +1,7 @@
 import type { EngineInterface, Register } from 'claude-code'
 
 import { specsOf, TYPES } from './agents'
+import { HINT } from './commands'
 import { flagsOf } from './flags'
 import { codexConfig, codexModels, labelOf, type Files } from './model'
 import { closeHeld, step } from './step'
@@ -46,4 +47,25 @@ export const register: Register = on => {
   })
 
   on('turn.step', step)
+
+  // The codex agent whose view is open, if any. The band above the prompt is
+  // drawn for the view on screen, and a render hook may not write $.state, so
+  // it is kept here; after a reload the next draw sets it again.
+  let codexView: string | undefined
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const id = e.props.view.agentId
+    const agent = id === undefined ? undefined : (await $.agent.list()).find(a => a.id === id)
+    const now = agent && TYPES[agent.type] ? id : undefined
+    if (now !== codexView) {
+      codexView = now
+      $.ui.invalidate('ui.render')
+      $.ui.invalidate('command.describe')
+    }
+    return next(e)
+  })
+
+  // There the footer names the agent's commands, and the "/" menu leaves out
+  // Claude Code's, which act on the main session rather than the agent.
+  on('ui.render', { component: 'PromptHint' }, async ($, e, next) => (codexView ? next({ ...e, props: { ...e.props, tail: HINT } }) : next(e)))
+  on('command.describe', async ($, e, next) => (codexView ? next({ ...e, isHidden: true }) : next(e)))
 }
