@@ -57,11 +57,12 @@ export function codex(on: On, mode: Mode = 'ok'): Fake {
     }
     try {
       for (;;) {
-        // Idle, it still yields now and then, so a close reaches it as it
-        // reaches a real child.
+        // Idle, it still yields now and then (a blank line, which the mod
+        // skips; an empty chunk is not one the engine takes), so a close
+        // reaches it as it reaches a real child.
         if (out.length === 0) await new Promise<void>(resolve => ((wake = resolve), setTimeout(resolve, 5)))
         if (mode === 'crash' && fake.decisions.length === 0 && out.length === 0 && asked) return { value: { code: 1, signal: null } }
-        yield { stream: 'stdout' as const, text: out.length > 0 ? `${out.shift()}\n` : '' }
+        yield { stream: 'stdout' as const, text: out.length > 0 ? `${out.shift()}\n` : '\n' }
       }
     } finally {
       fake.isClosed = true

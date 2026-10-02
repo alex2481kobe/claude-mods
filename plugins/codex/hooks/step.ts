@@ -50,6 +50,15 @@ const sent = atom({ plugin: 'codex', key: 'sent' } as const, {})
 const options = atom({ plugin: 'codex', key: 'options' } as const, {})
 const runs = atom({ plugin: 'codex', key: 'runs' } as const, {})
 
+// Records what Codex reported the agent's session runs with (or keeps the
+// last), with its token total once Codex has counted it.
+async function record($: EngineInterface, agentId: string, report: Omit<CodexRun, 'tokens'> | undefined, tokens?: CodexRun['tokens']): Promise<void> {
+  await update($, runs, all => {
+    const base = report ?? all[agentId]
+    return base ? { ...all, [agentId]: { ...base, tokens: tokens ?? all[agentId]?.tokens ?? { input: 0, cached: 0, output: 0 } } } : all
+  })
+}
+
 const shown = (text: string): TurnStepChunk => ({ kind: 'text', index: 0, text })
 
 // Codex's progress also as notices in the agent's conversation, appended as
@@ -175,6 +184,8 @@ export const step: Hook<'turn.step'> = async function* ($, e, next) {
         // What the session runs on, as Codex reports it.
         report = reportOf(thread)
         run.threadId = report.threadId
+        // Known now, for /codex-status while the turn runs.
+        await record($, agentId, report)
         model = report.model
         yield show(`codex ${labelOf({}, { model: report.model, effort: report.effort ?? undefined })} · ${type.shown}\ncodex session ${run.threadId}\n\n`)
         const images = flags.images.map(path => ({ type: 'localImage', path }))
@@ -218,10 +229,7 @@ export const step: Hook<'turn.step'> = async function* ($, e, next) {
       const isCutOff = asked.length > 0 && !run.isDone && !question && !run.error
       if (!isCutOff) await update($, sent, all => ({ ...all, [agentId]: [...(all[agentId] ?? []), ...request.texts] }))
       // What Codex reported this session runs with, and its token total.
-      await update($, runs, all => {
-        const base = report ?? all[agentId]
-        return base ? { ...all, [agentId]: { ...base, tokens: run.tokens ?? all[agentId]?.tokens ?? { input: 0, cached: 0, output: 0 } } } : all
-      })
+      await record($, agentId, report, run.tokens)
     }
   }
 
