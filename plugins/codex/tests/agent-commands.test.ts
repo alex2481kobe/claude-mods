@@ -65,4 +65,36 @@ describe('commands in a codex agent', () => {
     expect(fake.threads.at(-1)).toMatchObject({ config: { model_reasoning_effort: 'high' } })
     expect(fake.prompts.at(-1)).toBe('Count the lines.')
   })
+
+  test('a step with nothing new to pass on starts no Codex and does not hand back the last report again', async ($, on) => {
+    const turns: ApiTurn[] = [{ role: 'user', content: [{ type: 'text', text: TASK }, { type: 'text', text: REMINDER }] }]
+    engine(on, turns)
+    const fake = codex(on, 'quiet')
+    const done = await step($, 0)
+    expect(done.report).toBe('Counted.')
+    turns.push(
+      { role: 'assistant', content: [{ type: 'text', text: done.text }, { type: 'tool_use', id: 'h1', name: HANDBACK, input: { message: done.report } }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'h1', content: 'Report delivered' }] },
+    )
+    fake.argv = []
+    const again = await step($, 1)
+    expect(fake.argv).toEqual([])
+    expect(again.report).not.toContain('Counted.')
+    expect(again.report).toMatch(/^codex: /)
+  })
+
+  test('where a handback failed for want of the tool, the last report is given again as text', async ($, on) => {
+    const turns: ApiTurn[] = [{ role: 'user', content: [{ type: 'text', text: TASK }] }]
+    engine(on, turns)
+    const fake = codex(on, 'quiet')
+    const done = await step($, 0)
+    turns.push(
+      { role: 'assistant', content: [{ type: 'text', text: done.text }, { type: 'tool_use', id: 'h1', name: HANDBACK, input: { message: done.report } }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'h1', content: 'No such tool', is_error: true }] },
+    )
+    fake.argv = []
+    const again = await step($, 1)
+    expect(fake.argv).toEqual([])
+    expect(again.report).toBe('Counted.')
+  })
 })

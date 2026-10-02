@@ -239,8 +239,10 @@ agent's view.
   the agent's report, and Claude reads a message typed in the view as one the
   agent got.
 - Claude Code may run the agent's loop again for the copy of a message it
-  places later; the agent then repeats its last report, and its view shows
-  `codex: nothing to run.`
+  places later. Codex is not asked again, but the loop has to report, so
+  Claude gets a one-line report that nothing new was sent, and the view shows
+  `codex: nothing to run.` (Ending without a report would have Claude Code
+  tell Claude that no report came and to message the agent for one.)
 - Opening the session list (← from the prompt) moves the conversation into a
   background process. On macOS Claude Code 2.1.287 sometimes starts that
   process as the Claude Code app itself, which macOS checks on its own for

@@ -231,7 +231,12 @@ export const step: Hook<'turn.step'> = async function* ($, e, next) {
         ? `${run.answer ? `${run.answer}\n\n` : ''}codex failed: ${run.error}`
         : (run.answer ?? 'codex: the turn ended without a message.')
       : undefined
-  const message = request ? [...replies, ...(codexSaid ? [codexSaid] : [])].join('\n\n') : (lastReport(rows) ?? 'codex: no new request to run.')
+  // With nothing new, the engine has run the loop again for a message already
+  // passed on: the report it gave stands. Where reports go as text, a failed
+  // handback's report is given again, as that text is the report.
+  const message = request
+    ? [...replies, ...(codexSaid ? [codexSaid] : [])].join('\n\n')
+    : ((!handback && lastReport(rows)) || 'codex: nothing new was sent to this agent, so Codex was not asked; its last report stands.')
   if (!handback) {
     // The session line lets a follow-up resume this run (see requestOf).
     const text = run.threadId ? `${message}\n\ncodex session ${run.threadId}` : message
