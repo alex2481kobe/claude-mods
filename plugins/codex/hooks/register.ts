@@ -37,8 +37,12 @@ export const register: Register = on => {
     const type = TYPES[e.subagentType]
     if (!type) return next(e)
     const flags = flagsOf(e.prompt, type.pin)
-    const label = labelOf(await codexConfig(await files($)), 'error' in flags ? {} : flags)
-    return next({ ...e, description: `${e.description} · ${label}` })
+    const config = await codexConfig(await files($))
+    const label = labelOf(config, 'error' in flags ? {} : flags)
+    // The agent names the Codex model it runs on, which the task list shows;
+    // no request is sent on it while the mod answers the agent's steps.
+    const model = ('error' in flags ? undefined : flags.model) ?? config.model
+    return next({ ...e, description: `${e.description} · ${label}`, ...(model ? { model } : {}) })
   })
 
   // The transcript's Agent row names the type in words, not `codex:read`.
@@ -49,7 +53,12 @@ export const register: Register = on => {
     return next({ ...e, props: { ...e.props, input: { ...input, subagent_type: type.shown } } })
   })
 
-  on('turn.step', step)
+  // Should the mod fail on a step, a Claude model stands in, on the agent's
+  // prompt, to report that Codex did not run: not the Codex model it names.
+  on('turn.step', step).catch(async function* ($, e, next) {
+    const agent = e.agentId === undefined ? undefined : (await $.agent.list()).find(a => a.id === e.agentId)
+    return yield* next(agent && TYPES[agent.type] ? { ...e, model: 'claude-haiku-4-5' } : e)
+  })
 
   // A message sent to a codex agent while Codex works joins Codex's running
   // turn, so Codex reads it now and its answer covers it; the agent is not
