@@ -252,10 +252,11 @@ agent's view.
   agent types are gone until you restart. A plugin installed from the
   marketplace lives under `~/.claude` and is not affected; for a
   `--plugin-dir` or a local marketplace, keep the folder outside those three.
-- Claude Code's task list (`/tasks`) shows the Codex model the prompt or
-  your Codex config names (`gpt-6-luna`); with neither, it shows Haiku, the
-  stand-in's. The agent's row keeps the label it started with after a
-  `/codex-model`; each turn's header names the model Codex used.
+- Claude Code's task list (`/tasks`) names the stand-in's model, Haiku, for a
+  codex agent; the agent's row and header show Codex's. The agent keeps a
+  Claude model so that a run the mod does not answer (the mod not loaded, or
+  the session resumed without it) reaches the stand-in, which reports that
+  Codex did not run, rather than failing on a Codex model id.
 - Tested on macOS with codex-cli 0.159 and Claude Code 2.1.287, in an
   interactive terminal session (agent list, agent view and its commands,
   footer and `/` menu, background agents, messages and queued messages,

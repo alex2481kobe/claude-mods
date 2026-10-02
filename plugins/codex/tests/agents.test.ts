@@ -42,31 +42,16 @@ describe('agent types', () => {
     expect(description).toBe('Review · Astra 6 (xhigh)')
   })
 
-  test('a spawned agent names the Codex model it runs on, so the task list shows it', async ($, on) => {
+  // A run the mod does not answer goes to the agent's model, so it must stay
+  // the stand-in's Claude model whatever Codex model the prompt or config names.
+  test('a spawned agent keeps the stand-in\'s Claude model, never the Codex one', async ($, on) => {
     mock.env(on, { HOME: '/home/me' })
     on('fs.read', (_$, e) => ({ value: FILES[e.path] ?? '' }))
     const models: (string | undefined)[] = []
     on('agent.spawn', (_$, e) => (models.push(e.model), { model: e.model ?? 'haiku' }))
     await $.agent.spawn({ subagentType: 'codex:read', prompt: 'model: gpt-6-astra\nReview app.js', description: 'Review' } as never)
     await $.agent.spawn({ subagentType: 'codex:read', prompt: 'Review app.js', description: 'Review' } as never)
-    expect(models).toEqual(['gpt-6-astra', 'gpt-6.1-sol'])
-  })
-
-  test('if the mod fails on a step, the stand-in runs on a Claude model, not the Codex one', async ($, on) => {
-    on('agent.list', () => ({ value: [{ id: 'a1', type: 'codex:read', description: 'Review', status: 'running' }, { id: 'g1', type: 'general-purpose', description: 'Search', status: 'running' }] }))
-    on('session.messages', () => ({ value: { deny: 'not readable' } as never }))
-    const models: string[] = []
-    on('turn.step', async function* (_$, e) {
-      models.push(e.model)
-      yield { kind: 'stop', stopReason: 'end_turn', usage: null }
-      return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: null }
-    })
-    for (const agentId of ['a1', 'g1']) {
-      const stream = $.turn.step({ turnId: 't', index: 0, model: 'gpt-6-astra', messageCount: 1, agentId })
-      for (let next = await stream.next(); !next.done; next = await stream.next());
-    }
-    // Another agent's failed step keeps its own model.
-    expect(models).toEqual(['claude-haiku-4-5', 'gpt-6-astra'])
+    expect(models).toEqual([undefined, undefined])
   })
 
   // The agent list summarises a running agent from its definition's prompt,
