@@ -16,6 +16,8 @@ subagent, and Codex behaves like one:
   message resumes the same Codex session
 - when Codex asks for an approval or an answer, the agent reports the question
   and its next message answers it, in the same paused Codex turn
+- in its view, `/codex-*` commands change its model, effort, sandbox and
+  approvals for its next Codex turns and show its status
 - stopping the agent stops Codex, and so does Claude Code exiting or crashing
 
 No Claude model runs inside the agent: the mod drives `codex app-server` in its
@@ -136,13 +138,49 @@ config: approvals_reviewer="user"
 Create note.txt containing hi.
 ```
 
+### Commands in the agent's view
+
+Open a codex agent's view (select it in the agent list, press Enter) and send
+a command as a message. The agent answers it itself, in its view, and Codex
+is not asked:
+
+| Command                                                      | What it does                                                  |
+| ------------------------------------------------------------ | ------------------------------------------------------------- |
+| `/codex-model <id>`                                          | the Codex model, from the agent's next Codex turn             |
+| `/codex-effort <level>`                                      | the reasoning effort, from the next turn                      |
+| `/codex-sandbox <read-only\|workspace-write\|danger-full-access>` | the sandbox, from the next turn                         |
+| `/codex-approvals <untrusted\|on-request\|never>`            | when Codex asks for approval, from the next turn              |
+| `/codex-status`                                              | what Codex said the session ran with at its last turn, what changes next turn, the Codex session and its tokens |
+| `/codex-help`                                                | the list                                                      |
+
+```
+model     gpt-6-astra from the next Codex turn (now gpt-6-luna)
+effort    low
+sandbox   workspace-write
+approvals on-request
+session   01a0f9f0-0000-7000-8000-000000000000
+tokens    141,551 in (127,488 cached), 296 out
+```
+
+A setting is kept for that agent and goes with each of its later Codex turns,
+and the header of each turn names the model and effort Codex reports for it.
+Values follow the option rules above: `codex:read` and `codex:write` refuse
+`/codex-sandbox` and `/codex-approvals`, since they pin their sandbox, and a
+value that is not one plain word is refused. An unknown `/codex-` command, or
+one without its value, answers with the list. A message sent together with a
+command goes to Codex on its own.
+
+While a codex agent's view is open, the footer lists these commands and the
+`/` menu is empty: Claude Code's own commands act on the main session, not on
+the agent, so they are hidden there (typed in full, they still run).
+
 ## How it works
 
 - The mod registers the three agent types.
 - When a `codex:*` agent's loop asks its model for a response, the mod answers
   instead: it starts `codex app-server` with the agent's flags as config
   overrides, starts or resumes the Codex session in the session's working
-  directory, shows Codex's messages and commands in the agent's view as they
+  directory with the settings its commands chose, shows Codex's messages and commands in the agent's view as they
   happen (each is also appended as a notice, which is what refreshes the agent
   list's activity line; the detailed transcript, ctrl+o, shows both), and
   reports Codex's token usage on the agent's row.
@@ -158,8 +196,12 @@ Create note.txt containing hi.
   through the `SubagentHandback` tool in an interactive session, or as the
   final text where that tool does not exist (headless, SDK).
 - Codex runs only while it works or waits on a question. Every message sent to
-  the agent is passed to Codex once, as it was sent: as the answer to a waiting
-  question, or as a new turn of the same Codex session.
+  the agent is passed to Codex once, in the sender's own words: as the answer
+  to a waiting question, or as a new turn of the same Codex session. Claude
+  Code places a message sent to a running agent twice, wrapped in its own
+  instructions and as typed; the mod counts it once and drops the wrapping, so
+  the same words sent twice are asked twice. A `/codex-` message is the mod's
+  own and never reaches Codex.
 
 ## Limits
 
@@ -181,9 +223,27 @@ Create note.txt containing hi.
   the session ends.
 - An agent started with `ephemeral` cannot take follow-ups: Codex does not
   keep its session, so there is nothing to resume.
+- The commands are messages, not Claude Code commands: they do not
+  autocomplete, and typed in the main session Claude Code answers "Unknown
+  command". (Registered as commands they would run on the main session.)
+- What the agent answers, a command's reply included, also reaches Claude as
+  the agent's report, and Claude reads a message typed in the view as one the
+  agent got.
+- Claude Code may run the agent's loop again for the copy of a message it
+  places later; the agent then repeats its last report, and its view shows
+  `codex: nothing to run.`
+- Opening the session list (← from the prompt) moves the conversation to a
+  background session. Claude Code 2.1.287 sometimes takes it up there without
+  this mod loaded: the codex agent types are gone, and a codex agent still
+  running falls to the stand-in model, which reports that Codex did not run.
+  Restart Claude Code to get them back. No hook of the mod runs in that
+  session, so the mod cannot restore itself.
+- Claude Code's task list (`/tasks`) names the stand-in's model, Haiku, for a
+  codex agent; the agent's row and header show Codex's.
 - Tested on macOS with codex-cli 0.159 and Claude Code 2.1.287, in an
-  interactive terminal session (agent list, agent view, background agents,
-  messages, approvals, stop) and headless (`claude -p`). Linux should behave
+  interactive terminal session (agent list, agent view and its commands,
+  footer and `/` menu, background agents, messages and queued messages,
+  approvals, stop) and headless (`claude -p`). Linux should behave
   the same; Windows is not supported (the mod needs `sh` and a named pipe).
 - The mods API is early access and may change between Claude Code releases.
 
