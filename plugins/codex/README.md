@@ -142,9 +142,9 @@ Create note.txt containing hi.
 
 ### Commands in the agent's view
 
-Open a codex agent's view (select it in the agent list, press Enter) and send
-a command as a message. The agent answers it itself, in its view, and Codex
-is not asked:
+Open a codex agent's view (select it in the agent list, press Enter) and run
+a command; the `/` menu there lists them. The reply shows above the prompt in
+that view, and neither Codex nor Claude is sent it:
 
 | Command                                                      | What it does                                                  |
 | ------------------------------------------------------------ | ------------------------------------------------------------- |
@@ -169,12 +169,15 @@ and the header of each turn names the model and effort Codex reports for it.
 Values follow the option rules above: `codex:read` and `codex:write` refuse
 `/codex-sandbox` and `/codex-approvals`, since they pin their sandbox, and a
 value that is not one plain word is refused. An unknown `/codex-` command, or
-one without its value, answers with the list. A message sent together with a
-command goes to Codex on its own.
+one without its value, answers with the list. Claude can send one to the
+agent with SendMessage; then the reply is the agent's report, and a message
+sent together with it goes to Codex on its own.
 
-While a codex agent's view is open, the footer lists these commands and the
-`/` menu is empty: Claude Code's own commands act on the main session, not on
-the agent, so they are hidden there (typed in full, they still run).
+While a codex agent's view is open, the footer and the `/` menu list these
+commands alone: Claude Code's own commands act on the main session, not on
+the agent, so they are hidden there (typed in full, they still run). Elsewhere
+the `/codex-` commands are hidden, and one typed in full says to open a codex
+agent's view.
 
 ## How it works
 
@@ -230,10 +233,9 @@ the agent, so they are hidden there (typed in full, they still run).
 - Claude Code 2.1.287 shows a mod a message typed in an agent's view only
   once the agent's turn has ended, so such a message cannot join Codex's
   running turn; it waits for Codex's current task, then runs as its next turn.
-- The commands are messages, not Claude Code commands: they do not
-  autocomplete, and typed in the main session Claude Code answers "Unknown
-  command". (Registered as commands they would run on the main session.)
-- What the agent answers, a command's reply included, also reaches Claude as
+- A command's reply shows above the prompt only while that view stays open,
+  and goes when the view closes or the mod reloads.
+- What the agent answers also reaches Claude as
   the agent's report, and Claude reads a message typed in the view as one the
   agent got.
 - Claude Code may run the agent's loop again for the copy of a message it

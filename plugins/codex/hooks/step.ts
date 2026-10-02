@@ -3,13 +3,14 @@ import type { EngineInterface, Hook, TurnStepChunk, TurnUsage } from 'claude-cod
 
 import type { CodexRun } from '../types'
 import { TYPES } from './agents'
-import { answerOf, isCommand, threadParamsOf } from './commands'
+import { answersOf, isCommand, threadParamsOf } from './commands'
 import { apply, reportOf, type Run } from './events'
 import { flagsOf, type Flags, type Pin } from './flags'
 import { labelOf } from './model'
 import { expiredAnswer, questionOf, replyOf, type Asked } from './questions'
 import { HANDBACK, handsBack, lastAnswer, lastReport, requestOf, rowsOf } from './request'
 import { NO_CODEX, open, type Server } from './server'
+import { openView, setReply } from './view'
 
 // One step of a codex agent's loop: its model request answered by driving
 // `codex app-server`, Codex's steps streamed as the agent's text, and Codex's
@@ -83,15 +84,25 @@ async function answered($: EngineInterface, agentId: string, commands: string[],
   const last = (await read($, runs))[agentId]
   let replies: string[] = []
   await update($, options, all => {
-    let mine = all[agentId] ?? {}
-    replies = commands.map(text => {
-      const answer = answerOf(text, mine, pin, last)
-      mine = answer.options ?? mine
-      return answer.reply
-    })
-    return { ...all, [agentId]: mine }
+    const answers = answersOf(commands, all[agentId] ?? {}, pin, last)
+    replies = answers.replies
+    return { ...all, [agentId]: answers.options }
   })
   return replies
+}
+
+// A registered /codex- command acts on the agent whose view is open and
+// answers in that view's band; the main conversation is not sent the reply.
+export const command: Hook<'command.run'> = async ($, e, next) => {
+  if (!isCommand(`/${e.command}`)) return next(e)
+  const id = openView()
+  const agent = id === undefined ? undefined : (await $.agent.list()).find(a => a.id === id)
+  const type = agent && TYPES[agent.type]
+  if (!agent || !type) return { text: `Open a codex agent's view to use /${e.command}.` }
+  const [reply] = await answered($, agent.id, [`/${e.command} ${e.args}`.trim()], type.pin)
+  setReply(agent.id, reply!)
+  $.ui.invalidate('ui.render')
+  return {}
 }
 
 export const step: Hook<'turn.step'> = async function* ($, e, next) {

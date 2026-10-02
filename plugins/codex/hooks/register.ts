@@ -1,10 +1,12 @@
 import type { EngineInterface, Register } from 'claude-code'
 
 import { specsOf, TYPES } from './agents'
-import { HINT, isCommand } from './commands'
+import { replyBand } from './band'
+import { HINT, isCommand, SPECS } from './commands'
 import { flagsOf } from './flags'
 import { codexConfig, codexModels, labelOf, type Files } from './model'
-import { closeHeld, steer, step } from './step'
+import { closeHeld, command, steer, step } from './step'
+import { openView, replyIn, setOpenView } from './view'
 
 // Codex as native subagent types. The Agent tool starts one like any other
 // subagent (task list, background, SendMessage); a turn.step hook answers its
@@ -22,6 +24,7 @@ async function files($: EngineInterface): Promise<Files> {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     for (const spec of specsOf(await codexModels(await files($)))) await $.agent.register(spec)
+    for (const spec of SPECS) await $.command.register(spec)
     return next(e)
   })
 
@@ -57,24 +60,25 @@ export const register: Register = on => {
     return (await steer(agent.id, e.text)) ? { isDelivered: true } : next(e)
   })
 
-  // The codex agent whose view is open, if any. The band above the prompt is
-  // drawn for the view on screen, and a render hook may not write $.state, so
-  // it is kept here; after a reload the next draw sets it again.
-  let codexView: string | undefined
+  // The codex agent whose view is open: the band above the prompt is drawn
+  // for the view on screen, and shows the reply to the last /codex- command
+  // run there.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const id = e.props.view.agentId
     const agent = id === undefined ? undefined : (await $.agent.list()).find(a => a.id === id)
-    const now = agent && TYPES[agent.type] ? id : undefined
-    if (now !== codexView) {
-      codexView = now
+    if (setOpenView(agent && TYPES[agent.type] ? id : undefined)) {
       $.ui.invalidate('ui.render')
       $.ui.invalidate('command.describe')
     }
-    return next(e)
+    const view = openView()
+    const reply = view === undefined ? undefined : replyIn(view)
+    return reply ? replyBand($.ui.resolve(e), reply, await next(e)) : next(e)
   })
 
-  // There the footer names the agent's commands, and the "/" menu leaves out
-  // Claude Code's, which act on the main session rather than the agent.
-  on('ui.render', { component: 'PromptHint' }, async ($, e, next) => (codexView ? next({ ...e, props: { ...e.props, tail: HINT } }) : next(e)))
-  on('command.describe', async ($, e, next) => (codexView ? next({ ...e, isHidden: true }) : next(e)))
+  // There the footer names the agent's commands, and the "/" menu lists them
+  // alone: Claude Code's act on the main session rather than the agent.
+  // Elsewhere the agent's commands are left out.
+  on('ui.render', { component: 'PromptHint' }, async ($, e, next) => (openView() ? next({ ...e, props: { ...e.props, tail: HINT } }) : next(e)))
+  on('command.describe', async ($, e, next) => (Boolean(openView()) !== isCommand(`/${e.command}`) ? next({ ...e, isHidden: true }) : next(e)))
+  on('command.run', command)
 }
