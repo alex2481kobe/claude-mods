@@ -11,7 +11,7 @@ const typed = (text: string) =>
 function reply(turns: ApiTurn[], done: { text: string; report: string }, text: string, id: string): void {
   turns.push(
     { role: 'assistant', content: [{ type: 'text', text: done.text }, { type: 'tool_use', id, name: HANDBACK, input: { message: done.report } }] },
-    { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: 'Report delivered' }, { type: 'text', text: typed(text) }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: 'Report delivered to your caller.' }, { type: 'text', text: typed(text) }] },
   )
 }
 
@@ -74,7 +74,7 @@ describe('commands in a codex agent', () => {
     expect(done.report).toBe('Counted.')
     turns.push(
       { role: 'assistant', content: [{ type: 'text', text: done.text }, { type: 'tool_use', id: 'h1', name: HANDBACK, input: { message: done.report } }] },
-      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'h1', content: 'Report delivered' }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'h1', content: 'Report delivered to your caller.' }] },
     )
     fake.argv = []
     const again = await step($, 1)
@@ -90,11 +90,27 @@ describe('commands in a codex agent', () => {
     const done = await step($, 0)
     turns.push(
       { role: 'assistant', content: [{ type: 'text', text: done.text }, { type: 'tool_use', id: 'h1', name: HANDBACK, input: { message: done.report } }] },
-      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'h1', content: 'No such tool', is_error: true }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'h1', content: `<tool_use_error>Error: No such tool available: ${HANDBACK}</tool_use_error>`, is_error: true }] },
     )
     fake.argv = []
     const again = await step($, 1)
     expect(fake.argv).toEqual([])
     expect(again.report).toBe('Counted.')
+  })
+
+  test('after the person interrupts a handback, the next run still reports through the handback tool', async ($, on) => {
+    const turns: ApiTurn[] = [{ role: 'user', content: [{ type: 'text', text: TASK }, { type: 'text', text: REMINDER }] }]
+    engine(on, turns)
+    codex(on, 'quiet')
+    const done = await step($, 0)
+    turns.push(
+      { role: 'assistant', content: [{ type: 'text', text: done.text }, { type: 'tool_use', id: 'h1', name: HANDBACK, input: { message: done.report } }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'h1', content: "The user doesn't want to proceed with this tool use. The tool use was rejected.", is_error: true } as never, { type: 'text', text: '[Request interrupted by user]' }] },
+      { role: 'user', content: [{ type: 'text', text: typed('Count again.') }] },
+    )
+    const stream = $.turn.step({ turnId: 't', index: 1, model: 'claude-haiku-4-5', messageCount: 1, agentId: 'a1' })
+    let next = await stream.next()
+    while (!next.done) next = await stream.next()
+    expect(next.value.toolUses.map((u: { name: string }) => u.name)).toEqual([HANDBACK])
   })
 })

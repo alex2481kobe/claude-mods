@@ -30,13 +30,13 @@ export function formOf(text: string): { words: string; isWrapped: boolean } {
   return wrapped === undefined ? { words: text.trim(), isWrapped: false } : { words: wrapped.trim(), isWrapped: true }
 }
 
-// One turn of the conversation: its words, and its tool calls with whether
-// each failed.
+// One turn of the conversation: its words, and its tool calls with the text
+// of each one's result, once there is one.
 export type Row = {
   role: 'user' | 'assistant'
   text: string
   texts: readonly string[]
-  toolUses: readonly { tool: string; input: Record<string, unknown>; isError?: true }[]
+  toolUses: readonly { tool: string; input: Record<string, unknown>; result?: string }[]
 }
 
 type ApiBlock = { type: string; [field: string]: unknown }
@@ -46,10 +46,10 @@ export type ApiTurn = { role: 'user' | 'assistant'; content: readonly ApiBlock[]
 // (`$.session.messages()`) leave out meta rows, and a message queued while the
 // agent ran is one, so the API form is the one that holds every request.
 export function rowsOf(turns: readonly ApiTurn[]): Row[] {
-  const failed = new Set<unknown>()
+  const results = new Map<unknown, string>()
   for (const turn of turns) {
     for (const block of turn.content) {
-      if (block.type === 'tool_result' && block.is_error) failed.add(block.tool_use_id)
+      if (block.type === 'tool_result') results.set(block.tool_use_id, resultText(block.content))
     }
   }
   return turns.map(turn => {
@@ -65,7 +65,7 @@ export function rowsOf(turns: readonly ApiTurn[]): Row[] {
       .map(b => ({
         tool: String(b.name),
         input: (b.input ?? {}) as Record<string, unknown>,
-        ...(failed.has(b.id) ? { isError: true as const } : {}),
+        ...(results.has(b.id) ? { result: results.get(b.id) } : {}),
       })),
     }
   })
@@ -107,12 +107,24 @@ export function requestOf(rows: readonly Row[], sent: readonly string[]): Reques
   return { prompt: texts.join('\n\n'), opening, texts, sessionId: sent.length > 0 ? sessionId : undefined }
 }
 
+// A tool result's content: a string, or text blocks.
+function resultText(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content.map(b => (b?.type === 'text' && typeof b.text === 'string' ? b.text : '')).join('\n')
+}
+
+// Claude Code's error for a call to a tool the loop does not have.
+const NO_SUCH_TOOL = 'No such tool available'
+
 // Whether this loop reports through a SubagentHandback call. An interactive
 // session gives subagents the tool and insists on it; a headless or SDK run
 // has none and takes the final text as the report. Nothing the loop can read
-// says which ahead of time, so it hands back until a handback has failed.
+// says which ahead of time, so it hands back until a handback has failed for
+// want of the tool. Any other failure (the person interrupted it) says the
+// tool is there.
 export function handsBack(rows: readonly Row[]): boolean {
-  return !rows.some(r => r.toolUses.some(u => u.tool === HANDBACK && u.isError))
+  return !rows.some(r => r.toolUses.some(u => u.tool === HANDBACK && u.result?.includes(NO_SUCH_TOOL)))
 }
 
 // The report of the last handback the loop sent, to repeat it as text when

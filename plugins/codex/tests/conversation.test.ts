@@ -23,10 +23,16 @@ const ran = (handback = true): ApiTurn => ({
     ...(handback ? [{ type: 'tool_use', id: 'h1', name: HANDBACK, input: { message: 'the list' } }] : []),
   ],
 })
+// The handback's result: delivered, or failed because the loop has no such
+// tool, as Claude Code 2.1.287 words them.
 const delivered = (isError = false, ...texts: string[]): ApiTurn => ({
   role: 'user',
-  content: [{ type: 'tool_result', tool_use_id: 'h1', content: 'Report delivered', is_error: isError }, ...texts.map(text => ({ type: 'text', text }))],
+  content: [{ type: 'tool_result', tool_use_id: 'h1', content: isError ? NO_TOOL : 'Report delivered to your caller.', is_error: isError }, ...texts.map(text => ({ type: 'text', text }))],
 })
+const NO_TOOL = `<tool_use_error>Error: No such tool available: ${HANDBACK}</tool_use_error>`
+// A handback the person interrupted (Esc in the agent's view).
+const REJECTED = "The user doesn't want to take this action right now. STOP what you are doing and wait for the user to tell you how to proceed."
+const interrupted = (isError: boolean): ApiTurn => ({ role: 'user', content: [{ type: 'tool_result', tool_use_id: 'h1', content: [{ type: 'text', text: REJECTED }], ...(isError ? { is_error: true } : {}) }] })
 
 describe('requests', () => {
   test('the first run is the spawn prompt alone, without the engine reminder', () => {
@@ -129,6 +135,13 @@ describe('reporting', () => {
   test('a loop hands back until a handback fails for want of the tool', () => {
     expect(handsBack(rowsOf([user(TASK, REMINDER), ran(), delivered()]))).toBe(true)
     expect(handsBack(rowsOf([user(TASK), ran(), delivered(true)]))).toBe(false)
+    const asBlocks: ApiTurn = { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'h1', content: [{ type: 'text', text: NO_TOOL }], is_error: true }] }
+    expect(handsBack(rowsOf([user(TASK), ran(), asBlocks]))).toBe(false)
+  })
+
+  test('an interrupted handback is no sign the loop lacks the tool', () => {
+    expect(handsBack(rowsOf([user(TASK, REMINDER), ran(), interrupted(true)]))).toBe(true)
+    expect(handsBack(rowsOf([user(TASK, REMINDER), ran(), interrupted(false)]))).toBe(true)
   })
 
   test('the failed handback\'s report is kept to send as text', () => {
