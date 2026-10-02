@@ -80,6 +80,12 @@ describe('requests', () => {
     expect(requestOf(rows, [TASK, 'Also count the lines.'])).toBeUndefined()
   })
 
+  test('a command is answered each time it is sent', () => {
+    const rows = rowsOf([user(TASK, REMINDER), ran(), delivered(false, FROM_USER('/codex-status')), ran(), delivered(false, FROM_USER('/codex-status'))])
+    expect(requestOf(rows, [TASK, '/codex-status'])).toMatchObject({ texts: ['/codex-status'] })
+    expect(requestOf(rows, [TASK, '/codex-status', '/codex-status'])).toBeUndefined()
+  })
+
   test('a queued message the engine delivers again after its turn is not run again', () => {
     const rows = rowsOf([user(TASK, QUEUED, REMINDER), ran(), delivered(false, FROM_USER('Also count the lines.'))])
     expect(requestOf(rows, [TASK, 'Also count the lines.'])).toBeUndefined()

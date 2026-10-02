@@ -4,7 +4,11 @@
 // so the caller keeps the words already passed on (`sent`). Words are passed
 // once: the engine delivers some messages again (the spawn prompt when the
 // user writes in the agent's view, a queued message after its turn), and
-// nothing tells such a delivery from the same words sent again.
+// nothing tells such a delivery from the same words sent again. A `/codex-`
+// command is answered each time it is sent, by count: one more of it in the
+// conversation than in `sent` is a new one.
+
+import { isCommand } from './commands'
 
 export const HANDBACK = 'SubagentHandback'
 
@@ -79,7 +83,14 @@ export function requestOf(rows: readonly Row[], sent: readonly string[]): Reques
   const opening = sent[0] ?? asked[0]
   if (opening === undefined) return undefined
 
-  const texts = asked.filter((text, i) => !sent.includes(text) && asked.indexOf(text) === i)
+  const left = [...sent]
+  const texts = asked.filter((text, i) => {
+    if (!isCommand(text)) return !sent.includes(text) && asked.indexOf(text) === i
+    const at = left.indexOf(text)
+    if (at === -1) return true
+    left.splice(at, 1)
+    return false
+  })
   if (texts.length === 0) return undefined
 
   let sessionId: string | undefined
