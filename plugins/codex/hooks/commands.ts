@@ -47,6 +47,8 @@ export function answerOf(text: string, options: Options, pin: Pin | undefined, r
     const why = name === 'help' ? '' : setting ? `codex: /codex-${name} needs a value.\n\n` : `codex: no /codex-${name}.\n\n`
     return { reply: `${why}${HELP}` }
   }
+  // One plain word: a value that spans lines would carry option lines of its own.
+  if (/\s/.test(value)) return { reply: `codex: /codex-${name} takes one plain value, not "${value}".` }
   const parsed = flagsOf(`${setting.option}: ${value}`, pin)
   if ('error' in parsed) return { reply: `codex: ${parsed.error}` }
   if (parsed.prompt !== '') return { reply: `codex: /codex-${name} takes one plain value, not "${value}".` }

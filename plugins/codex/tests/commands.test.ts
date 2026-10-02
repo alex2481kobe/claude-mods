@@ -31,7 +31,7 @@ describe('commands', () => {
   })
 
   test('a value the option rules refuse changes nothing and says why', () => {
-    for (const text of ['/codex-model gpt"; touch x', '/codex-model a b', '/codex-sandbox everywhere', '/codex-approvals sometimes']) {
+    for (const text of ['/codex-model gpt"; touch x', '/codex-model a b', '/codex-model gpt-6-astra\ncd: /etc', '/codex-effort high\nmodel: x', '/codex-sandbox everywhere', '/codex-approvals sometimes']) {
       const { reply, options } = answerOf(text, { effort: 'low' }, undefined, RUN)
       expect(options).toBeUndefined()
       expect(reply).toMatch(/^codex: /)
