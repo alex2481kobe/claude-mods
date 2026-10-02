@@ -202,10 +202,14 @@ agent's view.
   final text where that tool does not exist (headless, SDK). A handback you
   interrupt (Esc in the agent's view) does not change that; the report it
   carried is handed back again the next time the agent's loop runs.
-- A step interrupted before Codex finished (Esc, or the session moving to
-  the background as the session list opens) passes nothing on: Codex is
+- A step interrupted before Codex finished (Esc) passes nothing on: Codex is
   stopped, and the next time the agent's loop runs, the message is given to
-  Codex again.
+  Codex again. When the interruption is the session moving to the background
+  (the session list opening while the agent's first turn runs), Claude Code
+  2.1.287 continues the agent in a forked session whose conversation, as the
+  mod reads it, no longer holds the task, so the agent reports
+  `codex: nothing new to send to Codex.` and Claude has to send the task
+  again.
 - Codex runs only while it works or waits on a question. Every message sent to
   the agent is passed to Codex once, in the sender's own words: as the answer
   to a waiting question, added to Codex's running turn (`turn/steer`, for a

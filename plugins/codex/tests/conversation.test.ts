@@ -27,7 +27,7 @@ const ran = (handback = true): ApiTurn => ({
 // tool, as Claude Code 2.1.287 words them.
 const delivered = (isError = false, ...texts: string[]): ApiTurn => ({
   role: 'user',
-  content: [{ type: 'tool_result', tool_use_id: 'h1', content: isError ? NO_TOOL : 'Report delivered to your caller.', is_error: isError }, ...texts.map(text => ({ type: 'text', text }))],
+  content: [{ type: 'tool_result', tool_use_id: 'h1', content: isError ? NO_TOOL : [{ type: 'text', text: '{"success":true,"message":"Report delivered to your caller."}' }], is_error: isError }, ...texts.map(text => ({ type: 'text', text }))],
 })
 const NO_TOOL = `<tool_use_error>Error: No such tool available: ${HANDBACK}</tool_use_error>`
 // A handback the person interrupted (Esc in the agent's view).

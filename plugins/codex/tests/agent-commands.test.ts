@@ -10,6 +10,9 @@ declare const setTimeout: (run: () => void, ms: number) => unknown
 const typed = (text: string) =>
   `The user sent a new message while you were working:\n${text}\n\nThis is how Claude Code surfaces messages the user sends mid-turn — within the running turn, often alongside the next tool result, rather than as a separate conversation turn. Address the message above as you continue this turn.`
 
+// A delivered handback's result, as Claude Code 2.1.287 records it.
+const DELIVERED = [{ type: 'text', text: '{"success":true,"message":"Report delivered to your caller."}' }]
+
 // The agent's last turn handed back, and the next message the user typed.
 function reply(turns: ApiTurn[], done: { text: string; report: string }, text: string, id: string): void {
   turns.push(
@@ -77,7 +80,7 @@ describe('commands in a codex agent', () => {
     expect(done.report).toBe('Counted.')
     turns.push(
       { role: 'assistant', content: [{ type: 'text', text: done.text }, { type: 'tool_use', id: 'h1', name: HANDBACK, input: { message: done.report } }] },
-      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'h1', content: 'Report delivered to your caller.' }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'h1', content: DELIVERED }] },
     )
     fake.argv = []
     const again = await step($, 1)
@@ -146,7 +149,7 @@ describe('commands in a codex agent', () => {
     expect(done.report).toMatch(/^codex failed: /)
     turns.push(
       { role: 'assistant', content: [{ type: 'text', text: done.text }, { type: 'tool_use', id: 'h1', name: HANDBACK, input: { message: done.report } }] },
-      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'h1', content: 'Report delivered to your caller.' }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'h1', content: DELIVERED }] },
     )
     fake.argv = []
     const again = await step($, 1)
