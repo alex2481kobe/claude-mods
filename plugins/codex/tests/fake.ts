@@ -1,0 +1,111 @@
+import { mock } from 'claude-code/testing'
+import type { AgentInfo, On, TurnStepChunk } from 'claude-code'
+
+import { HANDBACK, type ApiTurn } from '../hooks/request'
+
+// A stand-in for `codex app-server` and the rest of the engine one codex
+// agent's step reads, shared by the tests that run a step.
+
+// The test runner has timers; the mod's own environment declares none.
+declare const setTimeout: (run: () => void, ms: number) => unknown
+
+// A TMPDIR holding a quote and a backslash, which the FIFO line carries as is.
+const FIFO = '/tmp/we"ird\\dir/codex-mod.test/in'
+export const TASK = 'model: gpt-6-luna\nsandbox: read-only\nask-for-approval: on-request\nconfig: approvals_reviewer="user"\nCreate note.txt.'
+export const INSTALL = 'needs the Codex CLI with `codex app-server`'
+export const REMINDER = `<system-reminder>\nYour final report is delivered through ${HANDBACK}.\n</system-reminder>`
+
+type Fake = { argv: string[]; decisions: unknown[]; isClosed: boolean; writesAfterClose: number }
+
+// How the stand-in ends: answers and finishes (`ok`), dies while its question
+// waits (`crash`), or the shell finds no app-server, no codex, or Codex fails
+// on its own "not found".
+export type Mode = 'ok' | 'crash' | 'no-app-server' | 'no-codex' | 'config-not-found'
+
+// A stand-in for `codex app-server` behind the mod's shell: it reads the
+// mod's JSON-RPC from the FIFO, answers it on stdout, asks for one approval
+// in its turn, and finishes the turn once that is answered. The FIFO is there
+// only while it runs, as the shell removes it on the way out.
+export function codex(on: On, mode: Mode = 'ok'): Fake {
+  const fake: Fake = { argv: [], decisions: [], isClosed: false, writesAfterClose: 0 }
+  const out: string[] = []
+  let wake: (() => void) | undefined
+  const send = (message: object) => {
+    out.push(JSON.stringify(message))
+    wake?.()
+  }
+  on('process.spawn', async function* (_$, e) {
+    fake.argv = [...e.argv]
+    if (mode === 'no-codex') {
+      fake.isClosed = true
+      yield { stream: 'stderr' as const, text: 'codex-mod: codex: command not found\n' }
+      return { value: { code: 127, signal: null } }
+    }
+    yield { stream: 'stdout' as const, text: `codex-mod fifo ${FIFO}\n` }
+    if (mode === 'no-app-server' || mode === 'config-not-found') {
+      fake.isClosed = true
+      const said = mode === 'no-app-server' ? "error: unrecognized subcommand 'app-server'" : 'error: config profile not found'
+      yield { stream: 'stderr' as const, text: `${said}\n` }
+      return { value: { code: 2, signal: null } }
+    }
+    try {
+      for (;;) {
+        // Idle, it still yields now and then, so a close reaches it as it
+        // reaches a real child.
+        if (out.length === 0) await new Promise<void>(resolve => ((wake = resolve), setTimeout(resolve, 5)))
+        if (mode === 'crash' && fake.decisions.length === 0 && out.length === 0 && asked) return { value: { code: 1, signal: null } }
+        yield { stream: 'stdout' as const, text: out.length > 0 ? `${out.shift()}\n` : '' }
+      }
+    } finally {
+      fake.isClosed = true
+    }
+  })
+  let asked = false
+  on('fs.stat', (_$, e) => {
+    if (e.path === FIFO && !fake.isClosed) return { value: { kind: 'other', size: 0, mtimeMs: 0, isLink: false } }
+    throw new Error(`ENOENT: no such file or directory, stat '${e.path}'`)
+  })
+  on('fs.write', (_$, e) => {
+    if (e.path !== FIFO) return { value: undefined }
+    if (fake.isClosed) fake.writesAfterClose++
+    for (const line of e.text.split('\n').filter(Boolean)) {
+      const m = JSON.parse(line)
+      if (m.method === 'initialize') send({ id: m.id, result: {} })
+      if (m.method === 'thread/start' || m.method === 'thread/resume') send({ id: m.id, result: { thread: { id: 'th1' } } })
+      if (m.method === 'turn/start') {
+        send({ id: m.id, result: { turn: { id: 't1' } } })
+        send({ id: 0, method: 'item/commandExecution/requestApproval', params: { threadId: 'th1', command: "/bin/zsh -lc 'printf hi > note.txt'", cwd: '/work' } })
+        asked = true
+      }
+      if (m.method === undefined && m.id === 0) {
+        fake.decisions.push(m.result?.decision)
+        send({ method: 'item/completed', params: { threadId: 'th1', item: { type: 'agentMessage', text: 'Created note.txt.' } } })
+        send({ method: 'turn/completed', params: { threadId: 'th1', turn: { status: 'completed' } } })
+      }
+    }
+    return { value: undefined }
+  })
+  return fake
+}
+
+// The rest of the engine one codex agent's step reads.
+export function engine(on: On, turns: ApiTurn[]) {
+  mock.env(on, { HOME: '/home/me' })
+  const agent: AgentInfo = { id: 'a1', type: 'codex:run', description: 'Write note', status: 'running' }
+  on('agent.list', () => ({ value: [agent] }))
+  on('session.messages', () => ({ value: turns as never }))
+  on('session.cwd', () => ({ value: '/work' }))
+  on('fs.read', () => ({ value: '' }))
+}
+
+export async function step($: any, index: number): Promise<{ text: string; report: string }> {
+  const stream = $.turn.step({ turnId: 't', index, model: 'claude-haiku-4-5', messageCount: 1, agentId: 'a1' })
+  let text = ''
+  let next = await stream.next()
+  for (; !next.done; next = await stream.next()) {
+    const chunk = next.value as TurnStepChunk
+    if (chunk.kind === 'text') text += chunk.text
+  }
+  const result = next.value
+  return { text, report: result.toolUses[0]?.input?.message ?? result.answer }
+}
