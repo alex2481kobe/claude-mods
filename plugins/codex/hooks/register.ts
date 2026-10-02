@@ -1,10 +1,10 @@
 import type { EngineInterface, Register } from 'claude-code'
 
 import { specsOf, TYPES } from './agents'
-import { HINT } from './commands'
+import { HINT, isCommand } from './commands'
 import { flagsOf } from './flags'
 import { codexConfig, codexModels, labelOf, type Files } from './model'
-import { closeHeld, step } from './step'
+import { closeHeld, steer, step } from './step'
 
 // Codex as native subagent types. The Agent tool starts one like any other
 // subagent (task list, background, SendMessage); a turn.step hook answers its
@@ -47,6 +47,15 @@ export const register: Register = on => {
   })
 
   on('turn.step', step)
+
+  // A message sent to a codex agent while Codex works joins Codex's running
+  // turn, so Codex reads it now and its answer covers it; the agent is not
+  // also sent it, which would start another Codex turn once this one ends.
+  on('session.send', async ($, e, next) => {
+    const agent = (await $.agent.list()).find(a => a.id === e.to || a.name === e.to)
+    if (!agent || !TYPES[agent.type] || isCommand(e.text)) return next(e)
+    return (await steer(agent.id, e.text)) ? { isDelivered: true } : next(e)
+  })
 
   // The codex agent whose view is open, if any. The band above the prompt is
   // drawn for the view on screen, and a render hook may not write $.state, so

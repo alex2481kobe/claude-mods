@@ -12,8 +12,10 @@ subagent, and Codex behaves like one:
 - its row's activity line updates as Codex works, and Enter opens its view,
   where Codex's steps appear live and you can message it
 - it runs in the background, and its report comes back to Claude
-- you can message it, while it runs (`· 2 queued`) or after it finishes; each
-  message resumes the same Codex session
+- you can message it, while it runs or after it finishes; each message
+  resumes the same Codex session. A message Claude sends while Codex works
+  joins Codex's running turn, so Codex reads it then and its answer covers it;
+  one you type in the agent's view waits for the turn to end (`· 1 queued`)
 - when Codex asks for an approval or an answer, the agent reports the question
   and its next message answers it, in the same paused Codex turn
 - in its view, `/codex-*` commands change its model, effort, sandbox and
@@ -197,7 +199,9 @@ the agent, so they are hidden there (typed in full, they still run).
   final text where that tool does not exist (headless, SDK).
 - Codex runs only while it works or waits on a question. Every message sent to
   the agent is passed to Codex once, in the sender's own words: as the answer
-  to a waiting question, or as a new turn of the same Codex session. Claude
+  to a waiting question, added to Codex's running turn (`turn/steer`, for a
+  message Claude sends with SendMessage while Codex works), or as a new turn
+  of the same Codex session. Claude
   Code places a message sent to a running agent twice, wrapped in its own
   instructions and as typed; the mod counts it once and drops the wrapping, so
   the same words sent twice are asked twice. A `/codex-` message is the mod's
@@ -223,6 +227,9 @@ the agent, so they are hidden there (typed in full, they still run).
   the session ends.
 - An agent started with `ephemeral` cannot take follow-ups: Codex does not
   keep its session, so there is nothing to resume.
+- Claude Code 2.1.287 shows a mod a message typed in an agent's view only
+  once the agent's turn has ended, so such a message cannot join Codex's
+  running turn; it waits for Codex's current task, then runs as its next turn.
 - The commands are messages, not Claude Code commands: they do not
   autocomplete, and typed in the main session Claude Code answers "Unknown
   command". (Registered as commands they would run on the main session.)

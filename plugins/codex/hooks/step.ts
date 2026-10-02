@@ -19,6 +19,24 @@ import { NO_CODEX, open, type Server } from './server'
 // the agent's next message answers it.
 const held = new Map<string, { server: Server; asked: Asked; threadId: string }>()
 
+// The Codex turn each codex agent is running now, by agent id, so a message
+// sent to the agent meanwhile can join it rather than wait for it to end.
+const working = new Map<string, { server: Server; threadId: string; turnId: string }>()
+
+// Adds a message to the agent's running Codex turn; false when no turn runs
+// or Codex refused (the turn had just ended), so the message takes the usual
+// way: the agent's next turn.
+export async function steer(agentId: string, text: string): Promise<boolean> {
+  const turn = working.get(agentId)
+  if (!turn) return false
+  try {
+    await turn.server.call('turn/steer', { threadId: turn.threadId, expectedTurnId: turn.turnId, input: [{ type: 'text', text }] })
+    return true
+  } catch {
+    return false
+  }
+}
+
 // Ends every Codex turn left waiting on a question.
 export function closeHeld(): void {
   for (const { server } of held.values()) server.close()
@@ -152,7 +170,8 @@ export const step: Hook<'turn.step'> = async function* ($, e, next) {
         const schema = flags.outputSchema ? { outputSchema: JSON.parse(await $.fs.read(flags.outputSchema)) } : {}
         const opens = asked[0] === request.opening
         const text = opens ? (flagsOf(prompt, type.pin) as Flags).prompt : prompt
-        await server.call('turn/start', { threadId: run.threadId, input: [{ type: 'text', text }, ...images], ...schema })
+        const started = await server.call('turn/start', { threadId: run.threadId, input: [{ type: 'text', text }, ...images], ...schema })
+        if (started?.turn?.id) working.set(agentId, { server, threadId: run.threadId!, turnId: started.turn.id })
       }
       while (server && !question) {
         const message = await unlessAborted(next.signal, server.next())
@@ -181,6 +200,7 @@ export const step: Hook<'turn.step'> = async function* ($, e, next) {
         run.error += '. The codex mod needs the Codex CLI with `codex app-server` (0.159 or newer): `npm install -g @openai/codex`, then `codex login`.'
       }
     } finally {
+      working.delete(agentId)
       if (server && !held.has(agentId)) server.close()
       await update($, sent, all => ({ ...all, [agentId]: [...(all[agentId] ?? []), ...request.texts] }))
       // What Codex reported this session runs with, and its token total.
