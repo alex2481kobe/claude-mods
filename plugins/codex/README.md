@@ -11,7 +11,9 @@ subagent, and Codex behaves like one:
   its running time and token count, and clears when it finishes
 - its row's activity line updates as Codex works, and Enter opens its view,
   where Codex's steps appear live and you can message it
-- it runs in the background, and its report comes back to Claude
+- it runs in the background, and its report comes back to Claude; a report
+  that answers only what you typed in the agent's view lands in Claude's
+  history without Claude replying to it, since you read it there
 - you can message it, while it runs or after it finishes; each message
   resumes the same Codex session. A message Claude sends while Codex works
   joins Codex's running turn, so Codex reads it then and its answer covers it;
@@ -235,9 +237,14 @@ agent's view.
   running turn; it waits for Codex's current task, then runs as its next turn.
 - A command's reply shows above the prompt only while that view stays open,
   and goes when the view closes or the mod reloads.
-- What the agent answers also reaches Claude as
-  the agent's report, and Claude reads a message typed in the view as one the
-  agent got.
+- What the agent answers reaches Claude's history as the agent's report, and
+  Claude reads a message typed in the view as one the agent got. When a
+  report and the agent's finish notice are all that is new, and the run
+  answered only messages typed in the view (or had nothing new), the mod
+  answers that turn of the main conversation itself, so it costs no tokens and
+  shows no reply. A report that arrives with anything else, or for a task
+  Claude asked for, gets Claude's reply as usual. This is kept in memory: after
+  the mod reloads, Claude replies until the agent's next run.
 - Claude Code may run the agent's loop again for the copy of a message it
   places later. Codex is not asked again, but the loop has to report, so
   Claude gets a one-line report that nothing new was sent, and the view shows

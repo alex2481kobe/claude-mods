@@ -24,10 +24,16 @@ function isEngineText(text: string): boolean {
 // as it was sent.
 const WRAPPED = /^[^\n]* sent a (?:new )?message while you were working:\n([\s\S]*)\n\n[^\n]+$/
 
-// The sender's words, and whether the engine wrapped them.
-export function formOf(text: string): { words: string; isWrapped: boolean } {
+// The wrapper of a message the user typed in the agent's view.
+const FROM_USER = 'The user sent a '
+
+// The sender's words, whether the engine wrapped them, and whether the user
+// typed them in the agent's view.
+export function formOf(text: string): { words: string; isWrapped: boolean; isFromUser: boolean } {
   const wrapped = WRAPPED.exec(text.trim())?.[1]
-  return wrapped === undefined ? { words: text.trim(), isWrapped: false } : { words: wrapped.trim(), isWrapped: true }
+  return wrapped === undefined
+    ? { words: text.trim(), isWrapped: false, isFromUser: false }
+    : { words: wrapped.trim(), isWrapped: true, isFromUser: text.trim().startsWith(FROM_USER) }
 }
 
 // One turn of the conversation: its words, and its tool calls with whether
@@ -72,8 +78,9 @@ export function rowsOf(turns: readonly ApiTurn[]): Row[] {
 }
 
 // `opening` is the spawn prompt, which carries the agent's options; `texts`
-// are the words this request passes on, for the caller to add to `sent`.
-export type Request = { prompt: string; opening: string; texts: string[]; sessionId?: string }
+// are the words this request passes on, for the caller to add to `sent`;
+// `byUser` says the user typed every one of them in the agent's view.
+export type Request = { prompt: string; opening: string; texts: string[]; sessionId?: string; byUser: boolean }
 
 export function requestOf(rows: readonly Row[], sent: readonly string[]): Request | undefined {
   const forms = rows.filter(r => r.role === 'user').flatMap(r => r.texts).map(formOf)
@@ -104,7 +111,8 @@ export function requestOf(rows: readonly Row[], sent: readonly string[]): Reques
   for (const row of rows) {
     if (row.role === 'assistant') sessionId = SESSION.exec(row.text)?.[1] ?? sessionId
   }
-  return { prompt: texts.join('\n\n'), opening, texts, sessionId: sent.length > 0 ? sessionId : undefined }
+  const fromUser = new Set(forms.filter(form => form.isFromUser).map(form => form.words))
+  return { prompt: texts.join('\n\n'), opening, texts, sessionId: sent.length > 0 ? sessionId : undefined, byUser: texts.every(text => fromUser.has(text)) }
 }
 
 // Whether this loop reports through a SubagentHandback call. An interactive

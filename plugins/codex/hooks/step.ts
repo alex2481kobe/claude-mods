@@ -10,6 +10,7 @@ import { labelOf } from './model'
 import { expiredAnswer, questionOf, replyOf, type Asked } from './questions'
 import { HANDBACK, handsBack, lastAnswer, lastReport, requestOf, rowsOf } from './request'
 import { NO_CODEX, open, type Server } from './server'
+import { markQuiet } from './quiet'
 import { openView, setReply } from './view'
 
 // One step of a codex agent's loop: its model request answered by driving
@@ -237,6 +238,9 @@ export const step: Hook<'turn.step'> = async function* ($, e, next) {
   const message = request
     ? [...replies, ...(codexSaid ? [codexSaid] : [])].join('\n\n')
     : ((!handback && lastReport(rows)) || 'codex: nothing new was sent to this agent, so Codex was not asked; its last report stands.')
+  // A run that answered only the user in the agent's view, or found nothing
+  // new, needs no reply from the main conversation.
+  markQuiet(agentId, request ? request.byUser : true)
   if (!handback) {
     // The session line lets a follow-up resume this run (see requestOf).
     const text = run.threadId ? `${message}\n\ncodex session ${run.threadId}` : message

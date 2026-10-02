@@ -30,7 +30,7 @@ const delivered = (isError = false, ...texts: string[]): ApiTurn => ({
 
 describe('requests', () => {
   test('the first run is the spawn prompt alone, without the engine reminder', () => {
-    expect(requestOf(rowsOf([user(TASK, REMINDER)]), [])).toEqual({ prompt: TASK, opening: TASK, texts: [TASK], sessionId: undefined })
+    expect(requestOf(rowsOf([user(TASK, REMINDER)]), [])).toEqual({ prompt: TASK, opening: TASK, texts: [TASK], sessionId: undefined, byUser: false })
   })
 
   test('nothing new after a run is no request', () => {
@@ -39,7 +39,7 @@ describe('requests', () => {
 
   test('a queued message the engine folded into the first turn is the next request, resuming the session', () => {
     const rows = rowsOf([user(TASK, QUEUED, REMINDER), ran(), delivered()])
-    expect(requestOf(rows, [TASK])).toEqual({ prompt: 'Also count the lines.', opening: TASK, texts: ['Also count the lines.'], sessionId: SESSION })
+    expect(requestOf(rows, [TASK])).toEqual({ prompt: 'Also count the lines.', opening: TASK, texts: ['Also count the lines.'], sessionId: SESSION, byUser: false })
   })
 
   test('a queued message delivered with the handback result is the next request', () => {
@@ -117,6 +117,14 @@ describe('requests', () => {
   test('a wrapped message whose words end in a newline is the same message as its typed copy', () => {
     const rows = rowsOf([user(TASK), ran(false), user(FROM_USER('Say ALPHA.\n'), 'Say ALPHA.\n')])
     expect(requestOf(rows, [TASK])?.texts).toEqual(['Say ALPHA.'])
+  })
+
+  test('a request says whether every message in it was typed by the user in the agent\'s view', () => {
+    expect(requestOf(rowsOf([user(TASK, REMINDER)]), [])?.byUser).toBe(false)
+    expect(requestOf(rowsOf([user(TASK), ran(false), user(FROM_USER('go'))]), [TASK])?.byUser).toBe(true)
+    expect(requestOf(rowsOf([user(TASK), ran(false), user(FROM_USER('Say ALPHA.'), 'Say ALPHA.\n')]), [TASK])?.byUser).toBe(true)
+    expect(requestOf(rowsOf([user(TASK), ran(false), user(QUEUED)]), [TASK])?.byUser).toBe(false)
+    expect(requestOf(rowsOf([user(TASK), ran(false), user(FROM_USER('go'), QUEUED)]), [TASK])?.byUser).toBe(false)
   })
 
   test('the same words sent again are asked again', () => {
