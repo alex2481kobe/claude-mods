@@ -20,7 +20,9 @@ subagent, and Codex behaves like one:
   and its next message answers it, in the same paused Codex turn
 - in its view, `/codex-*` commands change its model, effort, sandbox and
   approvals for its next Codex turns and show its status
-- stopping the agent stops Codex, and so does Claude Code exiting or crashing
+- stopping the agent stops Codex, and so does Claude Code exiting or crashing;
+  like a stopped Claude subagent, its next message carries on in the same
+  Codex session rather than starting the task again
 
 No Claude model runs inside the agent: the mod drives `codex app-server` in its
 place and shows what Codex does in the agent's view as it happens. (A small Claude
@@ -204,12 +206,19 @@ agent's view.
   never reached the caller (its handback interrupted, or failed for want of
   the tool) is given again the next time the agent's loop runs, once: ahead
   of the answer to a new message, or alone when there is none.
-- A step interrupted before Codex finished (Esc) passes nothing on: Codex is
-  stopped, and the next time the agent's loop runs, the message is given to
-  Codex again. The agent's options come from the prompt it was spawned with,
-  which the mod records at spawn, so a first task run again keeps them
-  however Claude Code places the messages sent since; the task goes first,
-  then those messages. Claude Code's interruption marker
+- A step interrupted before Codex finished (Esc) stops Codex and reports
+  `codex: stopped before Codex finished.`: what Codex said on the way stays in
+  the agent's view and is never handed back, and that line is never given
+  again as an undelivered report. A message counts as passed on once Codex
+  has taken it (its turn started, or its question answered), finished or not:
+  the next message resumes the same Codex session with that message alone,
+  and the stopped task is not sent again. Only a step cut off before Codex
+  took its messages (Esc, or the session moving host, while the session was
+  starting) passes nothing on, and the next time the agent's loop runs, those
+  messages are given to Codex again. The agent's options come from the prompt
+  it was spawned with, which the mod records at spawn, so a first task run
+  again keeps them however Claude Code places the messages sent since; the
+  task goes first, then those messages. Claude Code's interruption marker
   (`[Request interrupted by user]`) never reaches Codex. When the interruption is the session moving to the background
   (the session list opening while the agent's first turn runs), Claude Code
   2.1.287 continues the agent in a forked session whose conversation, as the
