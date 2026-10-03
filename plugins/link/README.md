@@ -10,6 +10,9 @@ its folder in Finder, or opens a folder as itself, and a toast says which.
 
 - Claude Code with mods, in the terminal (the reply is only changed there)
 - macOS: it runs `open` and `open -R`
+- A terminal with hyperlinks (OSC 8), such as Ghostty or iTerm2. Apple
+  Terminal has none: there Claude Code writes each link's `file://` address
+  after it, so a path shows twice, and pressing it does not always open it
 
 ## Install
 
