@@ -3,13 +3,14 @@ import type { EngineInterface, Hook, TurnStepChunk, TurnUsage } from 'claude-cod
 
 import type { CodexRun } from '../types'
 import { TYPES } from './agents'
-import { answerOf, isCommand, threadParamsOf } from './commands'
+import { answersOf, isCommand, threadParamsOf } from './commands'
 import { apply, reportOf, type Run } from './events'
 import { flagsOf, type Flags, type Pin } from './flags'
 import { labelOf } from './model'
 import { expiredAnswer, questionOf, replyOf, type Asked } from './questions'
-import { HANDBACK, handsBack, lastAnswer, lastReport, requestOf, rowsOf } from './request'
+import { HANDBACK, handsBack, lastAnswer, requestOf, rowsOf, undeliveredReport } from './request'
 import { NO_CODEX, open, type Server } from './server'
+import { openView, setReply } from './view'
 
 // One step of a codex agent's loop: its model request answered by driving
 // `codex app-server`, Codex's steps streamed as the agent's text, and Codex's
@@ -19,17 +20,46 @@ import { NO_CODEX, open, type Server } from './server'
 // the agent's next message answers it.
 const held = new Map<string, { server: Server; asked: Asked; threadId: string }>()
 
+// The Codex turn each codex agent is running now, by agent id, so a message
+// sent to the agent meanwhile can join it rather than wait for it to end.
+const working = new Map<string, { server: Server; threadId: string; turnId: string }>()
+
+// Adds a message to the agent's running Codex turn; false when no turn runs
+// or Codex refused (the turn had just ended), so the message takes the usual
+// way: the agent's next turn.
+export async function steer(agentId: string, text: string): Promise<boolean> {
+  const turn = working.get(agentId)
+  if (!turn) return false
+  try {
+    await turn.server.call('turn/steer', { threadId: turn.threadId, expectedTurnId: turn.turnId, input: [{ type: 'text', text }] })
+    return true
+  } catch {
+    return false
+  }
+}
+
 // Ends every Codex turn left waiting on a question.
 export function closeHeld(): void {
   for (const { server } of held.values()) server.close()
   held.clear()
 }
 
-// What each codex agent has passed to Codex, so a message is sent once; what
-// its commands set; and what Codex last reported running it with.
+// What each codex agent has passed to Codex, so a message is sent once; the
+// prompt it was spawned with (register.ts records it); what its commands
+// set; and what Codex last reported running it with.
 const sent = atom({ plugin: 'codex', key: 'sent' } as const, {})
+const openings = atom({ plugin: 'codex', key: 'openings' } as const, {})
 const options = atom({ plugin: 'codex', key: 'options' } as const, {})
 const runs = atom({ plugin: 'codex', key: 'runs' } as const, {})
+
+// Records what Codex reported the agent's session runs with (or keeps the
+// last), with its token total once Codex has counted it.
+async function record($: EngineInterface, agentId: string, report: Omit<CodexRun, 'tokens'> | undefined, tokens?: CodexRun['tokens']): Promise<void> {
+  await update($, runs, all => {
+    const base = report ?? all[agentId]
+    return base ? { ...all, [agentId]: { ...base, tokens: tokens ?? all[agentId]?.tokens ?? { input: 0, cached: 0, output: 0 } } } : all
+  })
+}
 
 const shown = (text: string): TurnStepChunk => ({ kind: 'text', index: 0, text })
 
@@ -65,15 +95,25 @@ async function answered($: EngineInterface, agentId: string, commands: string[],
   const last = (await read($, runs))[agentId]
   let replies: string[] = []
   await update($, options, all => {
-    let mine = all[agentId] ?? {}
-    replies = commands.map(text => {
-      const answer = answerOf(text, mine, pin, last)
-      mine = answer.options ?? mine
-      return answer.reply
-    })
-    return { ...all, [agentId]: mine }
+    const answers = answersOf(commands, all[agentId] ?? {}, pin, last)
+    replies = answers.replies
+    return { ...all, [agentId]: answers.options }
   })
   return replies
+}
+
+// A registered /codex- command acts on the agent whose view is open and
+// answers in that view's band; the main conversation is not sent the reply.
+export const command: Hook<'command.run'> = async ($, e, next) => {
+  if (!isCommand(`/${e.command}`)) return next(e)
+  const id = openView()
+  const agent = id === undefined ? undefined : (await $.agent.list()).find(a => a.id === id)
+  const type = agent && TYPES[agent.type]
+  if (!agent || !type) return { text: `Open a codex agent's view to use /${e.command}.` }
+  const [reply] = await answered($, agent.id, [`/${e.command} ${e.args}`.trim()], type.pin)
+  setReply(agent.id, reply!)
+  $.ui.invalidate('ui.render')
+  return {}
 }
 
 export const step: Hook<'turn.step'> = async function* ($, e, next) {
@@ -86,7 +126,7 @@ export const step: Hook<'turn.step'> = async function* ($, e, next) {
   const api = await $.session.messages({ as: 'api', agentId })
   if ('deny' in api) throw new Error(api.deny)
   const rows = rowsOf(api)
-  const request = requestOf(rows, (await read($, sent))[agentId] ?? [])
+  const request = requestOf(rows, (await read($, sent))[agentId] ?? [], (await read($, openings))[agentId])
   // Codex's progress is the transcript's text; the report goes back with a
   // handback call, or as the final text where the loop has no such tool.
   const handback = handsBack(rows)
@@ -146,13 +186,16 @@ export const step: Hook<'turn.step'> = async function* ($, e, next) {
         // What the session runs on, as Codex reports it.
         report = reportOf(thread)
         run.threadId = report.threadId
+        // Known now, for /codex-status while the turn runs.
+        await record($, agentId, report)
         model = report.model
         yield show(`codex ${labelOf({}, { model: report.model, effort: report.effort ?? undefined })} · ${type.shown}\ncodex session ${run.threadId}\n\n`)
         const images = flags.images.map(path => ({ type: 'localImage', path }))
         const schema = flags.outputSchema ? { outputSchema: JSON.parse(await $.fs.read(flags.outputSchema)) } : {}
         const opens = asked[0] === request.opening
         const text = opens ? (flagsOf(prompt, type.pin) as Flags).prompt : prompt
-        await server.call('turn/start', { threadId: run.threadId, input: [{ type: 'text', text }, ...images], ...schema })
+        const started = await server.call('turn/start', { threadId: run.threadId, input: [{ type: 'text', text }, ...images], ...schema })
+        if (started?.turn?.id) working.set(agentId, { server, threadId: run.threadId!, turnId: started.turn.id })
       }
       while (server && !question) {
         const message = await unlessAborted(next.signal, server.next())
@@ -181,13 +224,14 @@ export const step: Hook<'turn.step'> = async function* ($, e, next) {
         run.error += '. The codex mod needs the Codex CLI with `codex app-server` (0.159 or newer): `npm install -g @openai/codex`, then `codex login`.'
       }
     } finally {
+      working.delete(agentId)
       if (server && !held.has(agentId)) server.close()
-      await update($, sent, all => ({ ...all, [agentId]: [...(all[agentId] ?? []), ...request.texts] }))
+      // A step cut off (interrupted, or closed) before Codex finished, asked or
+      // failed has passed nothing on: the next step runs it again.
+      const isCutOff = asked.length > 0 && !run.isDone && !question && !run.error
+      if (!isCutOff) await update($, sent, all => ({ ...all, [agentId]: [...(all[agentId] ?? []), ...request.texts] }))
       // What Codex reported this session runs with, and its token total.
-      await update($, runs, all => {
-        const base = report ?? all[agentId]
-        return base ? { ...all, [agentId]: { ...base, tokens: run.tokens ?? all[agentId]?.tokens ?? { input: 0, cached: 0, output: 0 } } } : all
-      })
+      await record($, agentId, report, run.tokens)
     }
   }
 
@@ -200,7 +244,12 @@ export const step: Hook<'turn.step'> = async function* ($, e, next) {
         ? `${run.answer ? `${run.answer}\n\n` : ''}codex failed: ${run.error}`
         : (run.answer ?? 'codex: the turn ended without a message.')
       : undefined
-  const message = request ? [...replies, ...(codexSaid ? [codexSaid] : [])].join('\n\n') : (lastReport(rows) ?? 'codex: no new request to run.')
+  // A report that never reached the caller goes ahead of this step's answer;
+  // with nothing new (the engine ran the loop again) the loop says only that.
+  const undelivered = undeliveredReport(rows)
+  const message = request
+    ? [...(undelivered ? [undelivered] : []), ...replies, ...(codexSaid ? [codexSaid] : [])].join('\n\n')
+    : (undelivered ?? 'codex: nothing new to send to Codex.')
   if (!handback) {
     // The session line lets a follow-up resume this run (see requestOf).
     const text = run.threadId ? `${message}\n\ncodex session ${run.threadId}` : message

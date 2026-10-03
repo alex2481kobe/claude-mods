@@ -18,19 +18,21 @@ export const TASK = 'model: gpt-6-luna\nsandbox: read-only\nask-for-approval: on
 export const INSTALL = 'needs the Codex CLI with `codex app-server`'
 export const REMINDER = `<system-reminder>\nYour final report is delivered through ${HANDBACK}.\n</system-reminder>`
 
-type Fake = { argv: string[]; threads: any[]; prompts: string[]; decisions: unknown[]; isClosed: boolean; writesAfterClose: number }
+type Fake = { argv: string[]; threads: any[]; prompts: string[]; steers: string[]; decisions: unknown[]; isClosed: boolean; writesAfterClose: number }
 
 // How the stand-in ends: answers and finishes (`ok`), finishes without asking
-// (`quiet`), dies while its question waits (`crash`), or the shell finds no
+// (`quiet`), works until a message is steered into its turn and then finishes
+// (`busy`), or refuses the message because its turn just ended (`ending`),
+// dies while its question waits (`crash`), or the shell finds no
 // app-server, no codex, or Codex fails on its own "not found".
-export type Mode = 'ok' | 'quiet' | 'crash' | 'no-app-server' | 'no-codex' | 'config-not-found'
+export type Mode = 'ok' | 'quiet' | 'busy' | 'ending' | 'crash' | 'no-app-server' | 'no-codex' | 'config-not-found'
 
 // A stand-in for `codex app-server` behind the mod's shell: it reads the
 // mod's JSON-RPC from the FIFO, answers it on stdout, asks for one approval
 // in its turn, and finishes the turn once that is answered. The FIFO is there
 // only while it runs, as the shell removes it on the way out.
 export function codex(on: On, mode: Mode = 'ok'): Fake {
-  const fake: Fake = { argv: [], threads: [], prompts: [], decisions: [], isClosed: false, writesAfterClose: 0 }
+  const fake: Fake = { argv: [], threads: [], prompts: [], steers: [], decisions: [], isClosed: false, writesAfterClose: 0 }
   const out: string[] = []
   let wake: (() => void) | undefined
   const send = (message: object) => {
@@ -38,7 +40,9 @@ export function codex(on: On, mode: Mode = 'ok'): Fake {
     wake?.()
   }
   on('process.spawn', async function* (_$, e) {
+    // Each spawn is a new app-server, open until it ends.
     fake.argv = [...e.argv]
+    fake.isClosed = false
     if (mode === 'no-codex') {
       fake.isClosed = true
       yield { stream: 'stderr' as const, text: 'codex-mod: codex: command not found\n' }
@@ -53,11 +57,12 @@ export function codex(on: On, mode: Mode = 'ok'): Fake {
     }
     try {
       for (;;) {
-        // Idle, it still yields now and then, so a close reaches it as it
-        // reaches a real child.
+        // Idle, it still yields now and then (a blank line, which the mod
+        // skips; an empty chunk is not one the engine takes), so a close
+        // reaches it as it reaches a real child.
         if (out.length === 0) await new Promise<void>(resolve => ((wake = resolve), setTimeout(resolve, 5)))
         if (mode === 'crash' && fake.decisions.length === 0 && out.length === 0 && asked) return { value: { code: 1, signal: null } }
-        yield { stream: 'stdout' as const, text: out.length > 0 ? `${out.shift()}\n` : '' }
+        yield { stream: 'stdout' as const, text: out.length > 0 ? `${out.shift()}\n` : '\n' }
       }
     } finally {
       fake.isClosed = true
@@ -81,7 +86,9 @@ export function codex(on: On, mode: Mode = 'ok'): Fake {
         send({ id: m.id, result: { thread: { id: THREAD }, model: m.params.model ?? 'gpt-6-luna', reasoningEffort: effort, sandbox: { type: 'workspaceWrite' }, approvalPolicy: m.params.approvalPolicy ?? 'on-request' } })
       }
       if (m.method === 'turn/start') fake.prompts.push(m.params.input[0].text)
-      if (m.method === 'turn/start' && mode === 'quiet') {
+      if (m.method === 'turn/start' && (mode === 'busy' || mode === 'ending')) {
+        send({ id: m.id, result: { turn: { id: 't1' } } })
+      } else if (m.method === 'turn/start' && mode === 'quiet') {
         send({ id: m.id, result: { turn: { id: 't1' } } })
         send({ method: 'thread/tokenUsage/updated', params: { threadId: THREAD, tokenUsage: { total: { inputTokens: 1500, cachedInputTokens: 1000, outputTokens: 40 }, last: { inputTokens: 1500, cachedInputTokens: 1000, outputTokens: 40 } } } })
         send({ method: 'item/completed', params: { threadId: THREAD, item: { type: 'agentMessage', text: 'Counted.' } } })
@@ -90,6 +97,19 @@ export function codex(on: On, mode: Mode = 'ok'): Fake {
         send({ id: m.id, result: { turn: { id: 't1' } } })
         send({ id: 0, method: 'item/commandExecution/requestApproval', params: { threadId: THREAD, command: "/bin/zsh -lc 'printf hi > note.txt'", cwd: '/work' } })
         asked = true
+      }
+      if (m.method === 'turn/steer') {
+        // Steering holds only for the turn that is running, named by its id.
+        if (mode === 'ending' || m.params.expectedTurnId !== 't1' || fake.steers.length > 0) {
+          send({ id: m.id, error: { code: -32600, message: 'no active turn to steer' } })
+          send({ method: 'item/completed', params: { threadId: THREAD, item: { type: 'agentMessage', text: 'Done.' } } })
+          send({ method: 'turn/completed', params: { threadId: THREAD, turn: { status: 'completed' } } })
+        } else {
+          fake.steers.push(m.params.input[0].text)
+          send({ id: m.id, result: { turnId: 't1' } })
+          send({ method: 'item/completed', params: { threadId: THREAD, item: { type: 'agentMessage', text: `Done, and ${m.params.input[0].text}` } } })
+          send({ method: 'turn/completed', params: { threadId: THREAD, turn: { status: 'completed' } } })
+        }
       }
       if (m.method === undefined && m.id === 0) {
         fake.decisions.push(m.result?.decision)
@@ -105,7 +125,7 @@ export function codex(on: On, mode: Mode = 'ok'): Fake {
 // The rest of the engine one codex agent's step reads.
 export function engine(on: On, turns: ApiTurn[]) {
   mock.env(on, { HOME: '/home/me' })
-  const agent: AgentInfo = { id: 'a1', type: 'codex:run', description: 'Write note', status: 'running' }
+  const agent: AgentInfo = { id: 'a1', type: 'codex:run', description: 'Write note', status: 'running', name: 'writer' }
   on('agent.list', () => ({ value: [agent] }))
   on('session.messages', () => ({ value: turns as never }))
   on('session.cwd', () => ({ value: '/work' }))

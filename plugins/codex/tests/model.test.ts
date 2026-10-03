@@ -13,7 +13,8 @@ describe('model', () => {
 
   test('the prompt choice wins over the config', () => {
     expect(labelOf({ model: 'gpt-5', effort: 'high' }, { model: 'gpt-6' })).toBe('gpt-6 (high)')
-    expect(labelOf({}, {})).toBe('default model')
+    expect(labelOf({}, {})).toBe('Codex default')
+    expect(labelOf({}, { effort: 'high' })).toBe('Codex default (high)')
   })
 
   test('lists model ids from the cache and tolerates a missing one', () => {

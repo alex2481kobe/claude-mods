@@ -12,14 +12,26 @@ export type Options = Partial<Record<CodexOptionName, string>>
 // The reply, and the agent's settings when the command changed them.
 export type Answer = { reply: string; options?: Options }
 
-const SETTINGS: Record<string, { option: CodexOptionName; value: string }> = {
-  model: { option: 'model', value: '<id>' },
-  effort: { option: 'effort', value: '<level>' },
-  sandbox: { option: 'sandbox', value: `<${SANDBOXES.join('|')}>` },
-  approvals: { option: 'ask-for-approval', value: `<${APPROVALS.join('|')}>` },
+const SETTINGS: Record<string, { option: CodexOptionName; value: string; what: string }> = {
+  model: { option: 'model', value: '<id>', what: 'The Codex model' },
+  effort: { option: 'effort', value: '<level>', what: 'The reasoning effort' },
+  sandbox: { option: 'sandbox', value: `<${SANDBOXES.join('|')}>`, what: 'The sandbox' },
+  approvals: { option: 'ask-for-approval', value: `<${APPROVALS.join('|')}>`, what: 'When Codex asks for approval' },
 }
 
-const NAMES = [...Object.keys(SETTINGS), 'status', 'help'].map(name => `/codex-${name}`)
+// The commands as Claude Code registers them, listed in a codex agent's view.
+export const SPECS: { name: string; description: string; argumentHint?: string; immediate: true }[] = [
+  ...Object.entries(SETTINGS).map(([name, { value, what }]) => ({
+    name: `codex-${name}`,
+    description: `${what} for this codex agent, from its next Codex turn`,
+    argumentHint: value,
+    immediate: true as const,
+  })),
+  { name: 'codex-status', description: 'What Codex runs this agent with, its session and its tokens', immediate: true },
+  { name: 'codex-help', description: 'The codex agent commands', immediate: true },
+]
+
+const NAMES = SPECS.map(spec => `/${spec.name}`)
 
 const HELP = [
   'Codex commands for this agent (a setting applies from its next Codex turn):',
@@ -47,10 +59,24 @@ export function answerOf(text: string, options: Options, pin: Pin | undefined, r
     const why = name === 'help' ? '' : setting ? `codex: /codex-${name} needs a value.\n\n` : `codex: no /codex-${name}.\n\n`
     return { reply: `${why}${HELP}` }
   }
+  // One plain word: a value that spans lines would carry option lines of its own.
+  if (/\s/.test(value)) return { reply: `codex: /codex-${name} takes one plain value, not "${value}".` }
   const parsed = flagsOf(`${setting.option}: ${value}`, pin)
   if ('error' in parsed) return { reply: `codex: ${parsed.error}` }
   if (parsed.prompt !== '') return { reply: `codex: /codex-${name} takes one plain value, not "${value}".` }
   return { reply: `codex: ${name} ${value} from the next Codex turn.`, options: { ...options, [setting.option]: value } }
+}
+
+// Commands answered in order, each seeing the settings the ones before it
+// left; the replies, and the agent's settings after them.
+export function answersOf(texts: readonly string[], options: Options, pin: Pin | undefined, run: CodexRun | undefined): { replies: string[]; options: Options } {
+  let mine = options
+  const replies = texts.map(text => {
+    const answer = answerOf(text, mine, pin, run)
+    mine = answer.options ?? mine
+    return answer.reply
+  })
+  return { replies, options: mine }
 }
 
 // The settings as thread/start and thread/resume take them: a resumed

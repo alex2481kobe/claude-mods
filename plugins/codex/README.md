@@ -12,8 +12,10 @@ subagent, and Codex behaves like one:
 - its row's activity line updates as Codex works, and Enter opens its view,
   where Codex's steps appear live and you can message it
 - it runs in the background, and its report comes back to Claude
-- you can message it, while it runs (`· 2 queued`) or after it finishes; each
-  message resumes the same Codex session
+- you can message it, while it runs or after it finishes; each message
+  resumes the same Codex session. A message Claude sends while Codex works
+  joins Codex's running turn, so Codex reads it then and its answer covers it;
+  one you type in the agent's view waits for the turn to end (`· 1 queued`)
 - when Codex asks for an approval or an answer, the agent reports the question
   and its next message answers it, in the same paused Codex turn
 - in its view, `/codex-*` commands change its model, effort, sandbox and
@@ -140,9 +142,9 @@ Create note.txt containing hi.
 
 ### Commands in the agent's view
 
-Open a codex agent's view (select it in the agent list, press Enter) and send
-a command as a message. The agent answers it itself, in its view, and Codex
-is not asked:
+Open a codex agent's view (select it in the agent list, press Enter) and run
+a command; the `/` menu there lists them. The reply shows above the prompt in
+that view, and neither Codex nor Claude is sent it:
 
 | Command                                                      | What it does                                                  |
 | ------------------------------------------------------------ | ------------------------------------------------------------- |
@@ -167,12 +169,15 @@ and the header of each turn names the model and effort Codex reports for it.
 Values follow the option rules above: `codex:read` and `codex:write` refuse
 `/codex-sandbox` and `/codex-approvals`, since they pin their sandbox, and a
 value that is not one plain word is refused. An unknown `/codex-` command, or
-one without its value, answers with the list. A message sent together with a
-command goes to Codex on its own.
+one without its value, answers with the list. Claude can send one to the
+agent with SendMessage; then the reply is the agent's report, and a message
+sent together with it goes to Codex on its own.
 
-While a codex agent's view is open, the footer lists these commands and the
-`/` menu is empty: Claude Code's own commands act on the main session, not on
-the agent, so they are hidden there (typed in full, they still run).
+While a codex agent's view is open, the footer and the `/` menu list these
+commands alone: Claude Code's own commands act on the main session, not on
+the agent, so they are hidden there (typed in full, they still run). Elsewhere
+the `/codex-` commands are hidden, and one typed in full says to open a codex
+agent's view.
 
 ## How it works
 
@@ -194,10 +199,28 @@ the agent, so they are hidden there (typed in full, they still run).
   two and ends Codex and the folder.
 - Codex's final message, or its question, goes back as the agent's report:
   through the `SubagentHandback` tool in an interactive session, or as the
-  final text where that tool does not exist (headless, SDK).
+  final text where that tool does not exist (headless, SDK). A handback you
+  interrupt (Esc in the agent's view) does not change that. A report that
+  never reached the caller (its handback interrupted, or failed for want of
+  the tool) is given again the next time the agent's loop runs, once: ahead
+  of the answer to a new message, or alone when there is none.
+- A step interrupted before Codex finished (Esc) passes nothing on: Codex is
+  stopped, and the next time the agent's loop runs, the message is given to
+  Codex again. The agent's options come from the prompt it was spawned with,
+  which the mod records at spawn, so a first task run again keeps them
+  however Claude Code places the messages sent since; the task goes first,
+  then those messages. Claude Code's interruption marker
+  (`[Request interrupted by user]`) never reaches Codex. When the interruption is the session moving to the background
+  (the session list opening while the agent's first turn runs), Claude Code
+  2.1.287 continues the agent in a forked session whose conversation, as the
+  mod reads it, no longer holds the task, so the agent reports
+  `codex: nothing new to send to Codex.` and Claude has to send the task
+  again.
 - Codex runs only while it works or waits on a question. Every message sent to
   the agent is passed to Codex once, in the sender's own words: as the answer
-  to a waiting question, or as a new turn of the same Codex session. Claude
+  to a waiting question, added to Codex's running turn (`turn/steer`, for a
+  message Claude sends with SendMessage while Codex works), or as a new turn
+  of the same Codex session. Claude
   Code places a message sent to a running agent twice, wrapped in its own
   instructions and as typed; the mod counts it once and drops the wrapping, so
   the same words sent twice are asked twice. A `/codex-` message is the mod's
@@ -223,23 +246,34 @@ the agent, so they are hidden there (typed in full, they still run).
   the session ends.
 - An agent started with `ephemeral` cannot take follow-ups: Codex does not
   keep its session, so there is nothing to resume.
-- The commands are messages, not Claude Code commands: they do not
-  autocomplete, and typed in the main session Claude Code answers "Unknown
-  command". (Registered as commands they would run on the main session.)
-- What the agent answers, a command's reply included, also reaches Claude as
+- Claude Code 2.1.287 shows a mod a message typed in an agent's view only
+  once the agent's turn has ended, so such a message cannot join Codex's
+  running turn; it waits for Codex's current task, then runs as its next turn.
+- A command's reply shows above the prompt only while that view stays open,
+  and goes when the view closes or the mod reloads.
+- What the agent answers also reaches Claude as
   the agent's report, and Claude reads a message typed in the view as one the
   agent got.
 - Claude Code may run the agent's loop again for the copy of a message it
-  places later; the agent then repeats its last report, and its view shows
-  `codex: nothing to run.`
-- Opening the session list (← from the prompt) moves the conversation to a
-  background session. Claude Code 2.1.287 sometimes takes it up there without
-  this mod loaded: the codex agent types are gone, and a codex agent still
-  running falls to the stand-in model, which reports that Codex did not run.
-  Restart Claude Code to get them back. No hook of the mod runs in that
-  session, so the mod cannot restore itself.
+  places later. Codex is not asked again, but the loop has to report, so
+  Claude gets the one line `codex: nothing new to send to Codex.`, and the
+  view shows `codex: nothing to run.` (Ending without a report would have
+  Claude Code tell Claude that no report came and to message the agent for
+  one.)
+- Opening the session list (← from the prompt) moves the conversation into a
+  background process. On macOS Claude Code 2.1.287 sometimes starts that
+  process as the Claude Code app itself, which macOS checks on its own for
+  access to Documents, Desktop and Downloads. If the plugin's folder is under
+  one of those and Claude Code has not been given access, that process cannot
+  read the plugin, so the conversation continues there without it: the codex
+  agent types are gone until you restart. A plugin installed from the
+  marketplace lives under `~/.claude` and is not affected; for a
+  `--plugin-dir` or a local marketplace, keep the folder outside those three.
 - Claude Code's task list (`/tasks`) names the stand-in's model, Haiku, for a
-  codex agent; the agent's row and header show Codex's.
+  codex agent; the agent's row and header show Codex's. The agent keeps a
+  Claude model so that a run the mod does not answer (the mod not loaded, or
+  the session resumed without it) reaches the stand-in, which reports that
+  Codex did not run, rather than failing on a Codex model id.
 - Tested on macOS with codex-cli 0.159 and Claude Code 2.1.287, in an
   interactive terminal session (agent list, agent view and its commands,
   footer and `/` menu, background agents, messages and queued messages,

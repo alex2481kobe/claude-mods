@@ -23,6 +23,13 @@ describe('agent types', () => {
     for (const r of registered) expect(r.description).toContain('models: gpt-6.1-sol, gpt-6-astra')
   })
 
+  test('with no Codex model cache (a fresh install) the descriptions name no models and still read whole', () => {
+    for (const { description } of specsOf([])) {
+      expect(description).not.toContain('models:')
+      expect(description).toContain('(`model: <id>`, `effort: <level>`); left out, Codex uses its own config.')
+    }
+  })
+
   test('a spawned agent is labelled with the model and effort it will run on', async ($, on) => {
     mock.env(on, { HOME: '/home/me' })
     on('fs.read', (_$, e) => ({ value: FILES[e.path] ?? '' }))
@@ -33,6 +40,18 @@ describe('agent types', () => {
     })
     await $.agent.spawn({ subagentType: 'codex:read', prompt: 'model: gpt-6-astra\nReview app.js', description: 'Review' } as never)
     expect(description).toBe('Review · Astra 6 (xhigh)')
+  })
+
+  // A run the mod does not answer goes to the agent's model, so it must stay
+  // the stand-in's Claude model whatever Codex model the prompt or config names.
+  test('a spawned agent keeps the stand-in\'s Claude model, never the Codex one', async ($, on) => {
+    mock.env(on, { HOME: '/home/me' })
+    on('fs.read', (_$, e) => ({ value: FILES[e.path] ?? '' }))
+    const models: (string | undefined)[] = []
+    on('agent.spawn', (_$, e) => (models.push(e.model), { model: e.model ?? 'haiku' }))
+    await $.agent.spawn({ subagentType: 'codex:read', prompt: 'model: gpt-6-astra\nReview app.js', description: 'Review' } as never)
+    await $.agent.spawn({ subagentType: 'codex:read', prompt: 'Review app.js', description: 'Review' } as never)
+    expect(models).toEqual([undefined, undefined])
   })
 
   // The agent list summarises a running agent from its definition's prompt,

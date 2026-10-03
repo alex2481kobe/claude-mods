@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { HANDBACK, formOf, handsBack, lastReport, requestOf, rowsOf, type ApiTurn } from '../hooks/request'
+import { HANDBACK, formOf, handsBack, undeliveredReport, requestOf, rowsOf, type ApiTurn } from '../hooks/request'
 
 // Shapes as an agent's conversation holds them in API form.
 const SESSION = '01a0f92d-0000-7000-8000-000000000000'
@@ -23,10 +23,16 @@ const ran = (handback = true): ApiTurn => ({
     ...(handback ? [{ type: 'tool_use', id: 'h1', name: HANDBACK, input: { message: 'the list' } }] : []),
   ],
 })
+// The handback's result: delivered, or failed because the loop has no such
+// tool, as Claude Code 2.1.287 words them.
 const delivered = (isError = false, ...texts: string[]): ApiTurn => ({
   role: 'user',
-  content: [{ type: 'tool_result', tool_use_id: 'h1', content: 'Report delivered', is_error: isError }, ...texts.map(text => ({ type: 'text', text }))],
+  content: [{ type: 'tool_result', tool_use_id: 'h1', content: isError ? NO_TOOL : [{ type: 'text', text: '{"success":true,"message":"Report delivered to your caller."}' }], is_error: isError }, ...texts.map(text => ({ type: 'text', text }))],
 })
+const NO_TOOL = `<tool_use_error>Error: No such tool available: ${HANDBACK}</tool_use_error>`
+// A handback the person interrupted (Esc in the agent's view).
+const REJECTED = "The user doesn't want to take this action right now. STOP what you are doing and wait for the user to tell you how to proceed."
+const interrupted = (isError: boolean): ApiTurn => ({ role: 'user', content: [{ type: 'tool_result', tool_use_id: 'h1', content: [{ type: 'text', text: REJECTED }], ...(isError ? { is_error: true } : {}) }] })
 
 describe('requests', () => {
   test('the first run is the spawn prompt alone, without the engine reminder', () => {
@@ -104,6 +110,21 @@ describe('requests', () => {
     expect(requestOf(rows, [TASK, '/codex-effort high', 'Say GAMMA.'])).toBeUndefined()
   })
 
+  test('words sent before, then a new message and the repeat, reach Codex in the order they came', () => {
+    const rows = rowsOf([user(TASK), ran(false), user('yes'), ran(false), user('continue'), user('yes')])
+    expect(requestOf(rows, [TASK, 'yes'])?.texts).toEqual(['continue', 'yes'])
+  })
+
+  test('two queued messages keep their order when only the first one\'s typed copy has been placed yet', () => {
+    const rows = rowsOf([user(TASK), ran(false), user(FROM_USER('Say A.'), FROM_USER('Say B.'), 'Say A.')])
+    expect(requestOf(rows, [TASK])?.texts).toEqual(['Say A.', 'Say B.'])
+  })
+
+  test('a wrapped message whose words end in a newline is the same message as its typed copy', () => {
+    const rows = rowsOf([user(TASK), ran(false), user(FROM_USER('Say ALPHA.\n'), 'Say ALPHA.\n')])
+    expect(requestOf(rows, [TASK])?.texts).toEqual(['Say ALPHA.'])
+  })
+
   test('the same words sent again are asked again', () => {
     expect(requestOf(rowsOf([user(TASK), ran(false), user('go'), user('go')]), [TASK, 'go'])).toMatchObject({ texts: ['go'] })
     expect(requestOf(rowsOf([user(TASK), ran(false), user(FROM_USER('go')), user(FROM_USER('go'))]), [TASK, 'go'])).toMatchObject({ texts: ['go'] })
@@ -114,14 +135,33 @@ describe('reporting', () => {
   test('a loop hands back until a handback fails for want of the tool', () => {
     expect(handsBack(rowsOf([user(TASK, REMINDER), ran(), delivered()]))).toBe(true)
     expect(handsBack(rowsOf([user(TASK), ran(), delivered(true)]))).toBe(false)
+    const asBlocks: ApiTurn = { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'h1', content: [{ type: 'text', text: NO_TOOL }], is_error: true }] }
+    expect(handsBack(rowsOf([user(TASK), ran(), asBlocks]))).toBe(false)
+  })
+
+  test('an interrupted handback is no sign the loop lacks the tool', () => {
+    expect(handsBack(rowsOf([user(TASK, REMINDER), ran(), interrupted(true)]))).toBe(true)
+    expect(handsBack(rowsOf([user(TASK, REMINDER), ran(), interrupted(false)]))).toBe(true)
   })
 
   test('the failed handback\'s report is kept to send as text', () => {
-    expect(lastReport(rowsOf([user(TASK), ran(), delivered(true)]))).toBe('the list')
+    expect(undeliveredReport(rowsOf([user(TASK), ran(), delivered(true)]))).toBe('the list')
   })
 })
 
 describe('options', () => {
+  test('the opening is the spawn prompt as recorded, and goes first while it is unsent, wherever the engine placed a later message', () => {
+    // As a live run placed it: the first run was cut off, then a message
+    // typed in the view landed ahead of the spawn prompt.
+    const rows = rowsOf([user('Just reply DONE.', TASK, REMINDER), user('[Request interrupted by user]')])
+    expect(requestOf(rows, [], TASK)).toEqual({ prompt: `${TASK}\n\nJust reply DONE.`, opening: TASK, texts: [TASK, 'Just reply DONE.'], sessionId: undefined })
+  })
+
+  test('the engine\'s interruption marker is no request', () => {
+    expect(requestOf(rowsOf([user(TASK), ran(), delivered(), user('[Request interrupted by user]')]), [TASK], TASK)).toBeUndefined()
+  })
+
+
   test('the opening is the first text passed to Codex, even when the engine places a later one ahead of it', () => {
     const rows = rowsOf([user(QUEUED, TASK), ran(), delivered()])
     expect(requestOf(rows, [TASK])).toMatchObject({ opening: TASK, prompt: 'Also count the lines.' })
