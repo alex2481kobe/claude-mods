@@ -147,6 +147,13 @@ describe('reporting', () => {
   test('the failed handback\'s report is kept to send as text', () => {
     expect(undeliveredReport(rowsOf([user(TASK), ran(), delivered(true)]))).toBe('the list')
   })
+
+  test('a stopped line is never an undelivered report: the report before it is the one given again', () => {
+    const stopped: ApiTurn = { role: 'assistant', content: [{ type: 'tool_use', id: 'h2', name: HANDBACK, input: { message: 'codex: stopped before Codex finished.' } }] }
+    const cut: ApiTurn = { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'h2', content: [{ type: 'text', text: REJECTED }] }] }
+    expect(undeliveredReport(rowsOf([user(TASK), ran(), delivered(), user('go'), stopped, cut]))).toBeUndefined()
+    expect(undeliveredReport(rowsOf([user(TASK), ran(), delivered(true), user('go'), stopped, cut]))).toBe('the list')
+  })
 })
 
 describe('options', () => {

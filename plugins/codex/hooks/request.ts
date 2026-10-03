@@ -1,3 +1,5 @@
+import { STOPPED } from './events'
+
 // What a codex agent's loop is being asked: every message in its conversation
 // not yet passed on. Position is no guide, since the engine moves messages
 // (a message sent while the agent runs is placed twice: wrapped, in its
@@ -141,12 +143,13 @@ const DELIVERED = 'Report delivered to your caller.'
 // The report of the last handback the loop sent, unless it was delivered: a
 // handback that failed (no such tool) or was interrupted never reached the
 // caller, so it is given again, once: a later turn that carries it as text
-// (the loop then reports as text) has given it.
+// (the loop then reports as text) has given it. A stopped run's line is no
+// report: the one before it is the last.
 export function undeliveredReport(rows: readonly Row[]): string | undefined {
   let last: { use: Row['toolUses'][number]; at: number } | undefined
   rows.forEach((row, at) => {
     for (const use of row.toolUses) {
-      if (use.tool === HANDBACK && typeof use.input.message === 'string') last = { use, at }
+      if (use.tool === HANDBACK && typeof use.input.message === 'string' && use.input.message !== STOPPED) last = { use, at }
     }
   })
   if (!last || last.use.result?.includes(DELIVERED)) return undefined

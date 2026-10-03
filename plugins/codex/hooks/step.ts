@@ -4,7 +4,7 @@ import type { EngineInterface, Hook, TurnStepChunk, TurnUsage } from 'claude-cod
 import type { CodexRun } from '../types'
 import { TYPES } from './agents'
 import { answersOf, isCommand, threadParamsOf } from './commands'
-import { apply, reportOf, type Run } from './events'
+import { answerOf, apply, reportOf, STOPPED, type Run } from './events'
 import { flagsOf, type Flags, type Pin } from './flags'
 import { labelOf } from './model'
 import { expiredAnswer, questionOf, replyOf, type Asked } from './questions'
@@ -126,7 +126,8 @@ export const step: Hook<'turn.step'> = async function* ($, e, next) {
   const api = await $.session.messages({ as: 'api', agentId })
   if ('deny' in api) throw new Error(api.deny)
   const rows = rowsOf(api)
-  const request = requestOf(rows, (await read($, sent))[agentId] ?? [], (await read($, openings))[agentId])
+  const given = (await read($, sent))[agentId] ?? []
+  const request = requestOf(rows, given, (await read($, openings))[agentId])
   // Codex's progress is the transcript's text; the report goes back with a
   // handback call, or as the final text where the loop has no such tool.
   const handback = handsBack(rows)
@@ -148,6 +149,9 @@ export const step: Hook<'turn.step'> = async function* ($, e, next) {
     await note($, agentId, reply)
   }
   let report: Omit<CodexRun, 'tokens'> | undefined
+  // Whether Codex took this step's messages: it started their turn, or its
+  // question was answered. From then they are passed on, finished or not.
+  let isTaken = false
   if (request) {
     const prompt = asked.join('\n\n')
     const pending = held.get(agentId)
@@ -167,12 +171,16 @@ export const step: Hook<'turn.step'> = async function* ($, e, next) {
         server = pending.server
         run.threadId = pending.threadId
         await server.respond(pending.asked.id, reply)
+        isTaken = true
         yield show(`answered Codex\n`)
         await note($, agentId, 'answered Codex')
       } else {
+        // Once Codex has taken a message the agent's session goes on, even
+        // where the conversation keeps no session line (a step stopped first).
+        const sessionId = given.length > 0 ? (request.sessionId ?? (await read($, runs))[agentId]?.threadId) : undefined
+        const first = sessionId === undefined
         // The spawn prompt's flags hold for every run of the agent; they are
         // not part of the task.
-        const first = request.sessionId === undefined
         const flags = flagsOf(request.opening, type.pin)
         if ('error' in flags) throw new Error(flags.error)
         const set = threadParamsOf((await read($, options))[agentId] ?? {})
@@ -182,7 +190,7 @@ export const step: Hook<'turn.step'> = async function* ($, e, next) {
         const overrides = { ...set, ...(Object.keys(config).length > 0 ? { config } : {}) }
         const thread = first
           ? await server.call('thread/start', { cwd: where, ...(flags.ephemeral ? { ephemeral: true } : {}), ...overrides })
-          : await server.call('thread/resume', { threadId: request.sessionId, cwd: where, ...overrides })
+          : await server.call('thread/resume', { threadId: sessionId, cwd: where, ...overrides })
         // What the session runs on, as Codex reports it.
         report = reportOf(thread)
         run.threadId = report.threadId
@@ -195,6 +203,7 @@ export const step: Hook<'turn.step'> = async function* ($, e, next) {
         const opens = asked[0] === request.opening
         const text = opens ? (flagsOf(prompt, type.pin) as Flags).prompt : prompt
         const started = await server.call('turn/start', { threadId: run.threadId, input: [{ type: 'text', text }, ...images], ...schema })
+        isTaken = true
         if (started?.turn?.id) working.set(agentId, { server, threadId: run.threadId!, turnId: started.turn.id })
       }
       while (server && !question) {
@@ -226,9 +235,9 @@ export const step: Hook<'turn.step'> = async function* ($, e, next) {
     } finally {
       working.delete(agentId)
       if (server && !held.has(agentId)) server.close()
-      // A step cut off (interrupted, or closed) before Codex finished, asked or
-      // failed has passed nothing on: the next step runs it again.
-      const isCutOff = asked.length > 0 && !run.isDone && !question && !run.error
+      // A step cut off (interrupted, or closed) before Codex took its messages,
+      // asked or failed has passed nothing on: the next step sends them again.
+      const isCutOff = asked.length > 0 && !isTaken && !question && !run.error
       if (!isCutOff) await update($, sent, all => ({ ...all, [agentId]: [...(all[agentId] ?? []), ...request.texts] }))
       // What Codex reported this session runs with, and its token total.
       await record($, agentId, report, run.tokens)
@@ -237,19 +246,17 @@ export const step: Hook<'turn.step'> = async function* ($, e, next) {
 
   // Codex's own token counts, so the agent's row shows what the run cost.
   const usage: TurnUsage | null = run.usage ? { ...run.usage, model } : null
-  const codexSaid = question
-    ? question
-    : asked.length > 0
-      ? run.error
-        ? `${run.answer ? `${run.answer}\n\n` : ''}codex failed: ${run.error}`
-        : (run.answer ?? 'codex: the turn ended without a message.')
-      : undefined
+  const codexSaid = question || (asked.length > 0 ? answerOf(run) : undefined)
   // A report that never reached the caller goes ahead of this step's answer;
   // with nothing new (the engine ran the loop again) the loop says only that.
+  // A stopped step says only that it stopped, which is never such a report.
   const undelivered = undeliveredReport(rows)
-  const message = request
-    ? [...(undelivered ? [undelivered] : []), ...replies, ...(codexSaid ? [codexSaid] : [])].join('\n\n')
-    : (undelivered ?? 'codex: nothing new to send to Codex.')
+  const message =
+    codexSaid === STOPPED
+      ? STOPPED
+      : request
+        ? [...(undelivered ? [undelivered] : []), ...replies, ...(codexSaid ? [codexSaid] : [])].join('\n\n')
+        : (undelivered ?? 'codex: nothing new to send to Codex.')
   if (!handback) {
     // The session line lets a follow-up resume this run (see requestOf).
     const text = run.threadId ? `${message}\n\ncodex session ${run.threadId}` : message

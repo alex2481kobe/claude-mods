@@ -20,7 +20,9 @@ subagent, and Codex behaves like one:
   and its next message answers it, in the same paused Codex turn
 - in its view, `/codex-*` commands change its model, effort, sandbox and
   approvals for its next Codex turns and show its status
-- stopping the agent stops Codex, and so does Claude Code exiting or crashing
+- stopping the agent stops Codex, and so does Claude Code exiting or crashing;
+  like a stopped Claude subagent, its next message carries on in the same
+  Codex session rather than starting the task again
 
 No Claude model runs inside the agent: the mod drives `codex app-server` in its
 place and shows what Codex does in the agent's view as it happens. (A small Claude
@@ -34,7 +36,7 @@ model stands in only if the mod itself fails, to report that failure.)
 
 ## Requirements
 
-- Claude Code with mods (tested on 2.1.287)
+- Claude Code with mods (tested on 2.1.287 and 2.1.288)
 - macOS or Linux (the mod talks to Codex through a named pipe)
 - The [Codex CLI](https://github.com/openai/codex) with `codex app-server`
   (tested on 0.159), installed and logged in:
@@ -204,12 +206,20 @@ agent's view.
   never reached the caller (its handback interrupted, or failed for want of
   the tool) is given again the next time the agent's loop runs, once: ahead
   of the answer to a new message, or alone when there is none.
-- A step interrupted before Codex finished (Esc) passes nothing on: Codex is
-  stopped, and the next time the agent's loop runs, the message is given to
-  Codex again. The agent's options come from the prompt it was spawned with,
-  which the mod records at spawn, so a first task run again keeps them
-  however Claude Code places the messages sent since; the task goes first,
-  then those messages. Claude Code's interruption marker
+- A step interrupted before Codex finished (Esc, or stopping the agent) stops
+  Codex, and the agent hands back only `codex: stopped before Codex
+  finished.`: what Codex said on the way is never handed back, and that line
+  is never given again as an undelivered report. (Claude Code's own notice
+  that the agent was stopped still quotes what the agent had shown so far.) A message counts as passed on once Codex
+  has taken it (its turn started, or its question answered), finished or not:
+  the next message resumes the same Codex session with that message alone,
+  and the stopped task is not sent again. Only a step cut off before Codex
+  took its messages (Esc, or the session moving host, while the session was
+  starting) passes nothing on, and the next time the agent's loop runs, those
+  messages are given to Codex again. The agent's options come from the prompt
+  it was spawned with, which the mod records at spawn, so a first task run
+  again keeps them however Claude Code places the messages sent since; the
+  task goes first, then those messages. Claude Code's interruption marker
   (`[Request interrupted by user]`) never reaches Codex. When the interruption is the session moving to the background
   (the session list opening while the agent's first turn runs), Claude Code
   2.1.287 continues the agent in a forked session whose conversation, as the
@@ -274,7 +284,7 @@ agent's view.
   Claude model so that a run the mod does not answer (the mod not loaded, or
   the session resumed without it) reaches the stand-in, which reports that
   Codex did not run, rather than failing on a Codex model id.
-- Tested on macOS with codex-cli 0.159 and Claude Code 2.1.287, in an
+- Tested on macOS with codex-cli 0.159 and Claude Code 2.1.287 and 2.1.288, in an
   interactive terminal session (agent list, agent view and its commands,
   footer and `/` menu, background agents, messages and queued messages,
   approvals, stop) and headless (`claude -p`). Linux should behave

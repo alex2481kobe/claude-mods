@@ -18,6 +18,17 @@ export type Run = {
   tokens?: CodexRun['tokens']
 }
 
+// What a run stopped before Codex finished answers: what Codex said on the
+// way is shown in the agent's view, never handed back as its report.
+export const STOPPED = 'codex: stopped before Codex finished.'
+
+// The run's answer: Codex's last message once the turn ended, its failure, or
+// that it was stopped first.
+export function answerOf(run: Run): string {
+  if (run.error) return `${run.answer ? `${run.answer}\n\n` : ''}codex failed: ${run.error}`
+  return run.isDone ? (run.answer ?? 'codex: the turn ended without a message.') : STOPPED
+}
+
 // What a thread/start or thread/resume answer says the session runs with.
 export function reportOf(answer: any): Omit<CodexRun, 'tokens'> {
   const policy = answer?.approvalPolicy
