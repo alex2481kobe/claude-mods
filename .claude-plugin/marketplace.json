@@ -20,6 +20,11 @@
       "name": "peek",
       "source": "./plugins/peek",
       "description": "Images in the terminal: real pixels in kitty and Ghostty, a colored-block preview elsewhere"
+    },
+    {
+      "name": "link",
+      "source": "./plugins/link",
+      "description": "Click a file path in a reply and Finder opens with it selected"
     }
   ]
 }

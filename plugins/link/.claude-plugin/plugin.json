@@ -1,0 +1,17 @@
+{
+  "name": "link",
+  "version": "0.2.2",
+  "description": "Click a file path in a reply and Finder opens with it selected",
+  "author": {
+    "name": "alex2481kobe",
+    "url": "https://github.com/alex2481kobe"
+  },
+  "homepage": "https://github.com/alex2481kobe/claude-mods",
+  "repository": "https://github.com/alex2481kobe/claude-mods",
+  "license": "Apache-2.0",
+  "keywords": [
+    "path",
+    "finder",
+    "mod"
+  ]
+}
