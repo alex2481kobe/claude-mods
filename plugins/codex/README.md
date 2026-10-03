@@ -36,7 +36,7 @@ model stands in only if the mod itself fails, to report that failure.)
 
 ## Requirements
 
-- Claude Code with mods (tested on 2.1.287)
+- Claude Code with mods (tested on 2.1.287 and 2.1.288)
 - macOS or Linux (the mod talks to Codex through a named pipe)
 - The [Codex CLI](https://github.com/openai/codex) with `codex app-server`
   (tested on 0.159), installed and logged in:
@@ -206,10 +206,11 @@ agent's view.
   never reached the caller (its handback interrupted, or failed for want of
   the tool) is given again the next time the agent's loop runs, once: ahead
   of the answer to a new message, or alone when there is none.
-- A step interrupted before Codex finished (Esc) stops Codex and reports
-  `codex: stopped before Codex finished.`: what Codex said on the way stays in
-  the agent's view and is never handed back, and that line is never given
-  again as an undelivered report. A message counts as passed on once Codex
+- A step interrupted before Codex finished (Esc, or stopping the agent) stops
+  Codex, and the agent hands back only `codex: stopped before Codex
+  finished.`: what Codex said on the way is never handed back, and that line
+  is never given again as an undelivered report. (Claude Code's own notice
+  that the agent was stopped still quotes what the agent had shown so far.) A message counts as passed on once Codex
   has taken it (its turn started, or its question answered), finished or not:
   the next message resumes the same Codex session with that message alone,
   and the stopped task is not sent again. Only a step cut off before Codex
@@ -283,7 +284,7 @@ agent's view.
   Claude model so that a run the mod does not answer (the mod not loaded, or
   the session resumed without it) reaches the stand-in, which reports that
   Codex did not run, rather than failing on a Codex model id.
-- Tested on macOS with codex-cli 0.159 and Claude Code 2.1.287, in an
+- Tested on macOS with codex-cli 0.159 and Claude Code 2.1.287 and 2.1.288, in an
   interactive terminal session (agent list, agent view and its commands,
   footer and `/` menu, background agents, messages and queued messages,
   approvals, stop) and headless (`claude -p`). Linux should behave
