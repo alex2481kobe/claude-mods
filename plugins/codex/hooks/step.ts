@@ -4,7 +4,7 @@ import type { EngineInterface, Hook, TurnStepChunk, TurnUsage } from 'claude-cod
 import type { CodexRun } from '../types'
 import { TYPES } from './agents'
 import { answersOf, isCommand, threadParamsOf } from './commands'
-import { apply, reportOf, type Run } from './events'
+import { answerOf, apply, reportOf, STOPPED, type Run } from './events'
 import { flagsOf, type Flags, type Pin } from './flags'
 import { labelOf } from './model'
 import { expiredAnswer, questionOf, replyOf, type Asked } from './questions'
@@ -237,19 +237,17 @@ export const step: Hook<'turn.step'> = async function* ($, e, next) {
 
   // Codex's own token counts, so the agent's row shows what the run cost.
   const usage: TurnUsage | null = run.usage ? { ...run.usage, model } : null
-  const codexSaid = question
-    ? question
-    : asked.length > 0
-      ? run.error
-        ? `${run.answer ? `${run.answer}\n\n` : ''}codex failed: ${run.error}`
-        : (run.answer ?? 'codex: the turn ended without a message.')
-      : undefined
+  const codexSaid = question || (asked.length > 0 ? answerOf(run) : undefined)
   // A report that never reached the caller goes ahead of this step's answer;
   // with nothing new (the engine ran the loop again) the loop says only that.
+  // A stopped step says only that it stopped, which is never such a report.
   const undelivered = undeliveredReport(rows)
-  const message = request
-    ? [...(undelivered ? [undelivered] : []), ...replies, ...(codexSaid ? [codexSaid] : [])].join('\n\n')
-    : (undelivered ?? 'codex: nothing new to send to Codex.')
+  const message =
+    codexSaid === STOPPED
+      ? STOPPED
+      : request
+        ? [...(undelivered ? [undelivered] : []), ...replies, ...(codexSaid ? [codexSaid] : [])].join('\n\n')
+        : (undelivered ?? 'codex: nothing new to send to Codex.')
   if (!handback) {
     // The session line lets a follow-up resume this run (see requestOf).
     const text = run.threadId ? `${message}\n\ncodex session ${run.threadId}` : message

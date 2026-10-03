@@ -16,6 +16,8 @@ export const THREAD = '01a0f92d-0000-7000-8000-0000000000a1'
 const FIFO = '/tmp/we"ird\\dir/codex-mod.test/in'
 export const TASK = 'model: gpt-6-luna\nsandbox: read-only\nask-for-approval: on-request\nconfig: approvals_reviewer="user"\nCreate note.txt.'
 export const INSTALL = 'needs the Codex CLI with `codex app-server`'
+// What a busy Codex says on the way, before its answer.
+export const INTERIM = "I'll read app.js first."
 export const REMINDER = `<system-reminder>\nYour final report is delivered through ${HANDBACK}.\n</system-reminder>`
 
 type Fake = { argv: string[]; threads: any[]; prompts: string[]; steers: string[]; decisions: unknown[]; isClosed: boolean; writesAfterClose: number }
@@ -88,6 +90,7 @@ export function codex(on: On, mode: Mode = 'ok'): Fake {
       if (m.method === 'turn/start') fake.prompts.push(m.params.input[0].text)
       if (m.method === 'turn/start' && (mode === 'busy' || mode === 'ending')) {
         send({ id: m.id, result: { turn: { id: 't1' } } })
+        send({ method: 'item/completed', params: { threadId: THREAD, item: { type: 'agentMessage', text: INTERIM } } })
       } else if (m.method === 'turn/start' && mode === 'quiet') {
         send({ id: m.id, result: { turn: { id: 't1' } } })
         send({ method: 'thread/tokenUsage/updated', params: { threadId: THREAD, tokenUsage: { total: { inputTokens: 1500, cachedInputTokens: 1000, outputTokens: 40 }, last: { inputTokens: 1500, cachedInputTokens: 1000, outputTokens: 40 } } } })
