@@ -107,5 +107,5 @@ function statusOf(options: Options, run: CodexRun | undefined): string {
   })
   if (!run) return ['codex: no Codex turn yet.', ...rows].join('\n')
   const { input, cached, output } = run.tokens
-  return [...rows, `${'session'.padEnd(10)}${run.threadId}`, `${'tokens'.padEnd(10)}${count(input)} in (${count(cached)} cached), ${count(output)} out`].join('\n')
+  return [...rows, `${'session'.padEnd(10)}${run.threadId}`, `${'tokens'.padEnd(10)}${count(input)} in (${count(cached)} cached), ${count(output)} out, running total`].join('\n')
 }

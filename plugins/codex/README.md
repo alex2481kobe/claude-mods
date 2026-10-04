@@ -8,7 +8,9 @@ Claude starts Codex with the Agent tool, the same way it starts any other
 subagent, and Codex behaves like one:
 
 - it shows in the agent list with its model and effort (`· Sol 6.1 (xhigh)`),
-  its running time and token count, and clears when it finishes
+  its running time and token count, and clears when it finishes; the count
+  is Codex's current context plus what it has written, the way Claude Code
+  counts a Claude subagent, not the session's running total
 - its row's activity line updates as Codex works, and Enter opens its view,
   where Codex's steps appear live and you can message it
 - it runs in the background, and its report comes back to Claude
@@ -154,7 +156,7 @@ that view, and neither Codex nor Claude is sent it:
 | `/codex-effort <level>`                                      | the reasoning effort, from the next turn                      |
 | `/codex-sandbox <read-only\|workspace-write\|danger-full-access>` | the sandbox, from the next turn                         |
 | `/codex-approvals <untrusted\|on-request\|never>`            | when Codex asks for approval, from the next turn              |
-| `/codex-status`                                              | what Codex said the session ran with at its last turn, what changes next turn, the Codex session and its tokens |
+| `/codex-status`                                              | what Codex said the session ran with at its last turn, what changes next turn, the Codex session and its running token total |
 | `/codex-help`                                                | the list                                                      |
 
 ```
@@ -163,7 +165,7 @@ effort    low
 sandbox   workspace-write
 approvals on-request
 session   01a0f9f0-0000-7000-8000-000000000000
-tokens    141,551 in (127,488 cached), 296 out
+tokens    141,551 in (127,488 cached), 296 out, running total
 ```
 
 A setting is kept for that agent and goes with each of its later Codex turns,
@@ -190,7 +192,12 @@ agent's view.
   directory with the settings its commands chose, shows Codex's messages and commands in the agent's view as they
   happen (each is also appended as a notice, which is what refreshes the agent
   list's activity line; the detailed transcript, ctrl+o, shows both), and
-  reports Codex's token usage on the agent's row.
+  reports Codex's token usage on the agent's row: each turn hands Claude Code
+  the input of Codex's last request (its current context, cached tokens
+  apart) and the output the turn generated. Claude Code keeps the latest
+  input and adds up the outputs, as it does for a Claude subagent. The
+  running total, which counts every cached re-read of the session and soon
+  reaches millions, is in `/codex-status`.
 - A mod's process takes its input once, so the mod writes to `codex app-server`
   through a named pipe in a private temporary folder, which goes when the
   process does. The mod writes only to that pipe, and never once the server

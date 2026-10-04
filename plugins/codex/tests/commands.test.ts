@@ -55,7 +55,7 @@ describe('commands', () => {
     expect(reply).toContain('read-only')
     expect(reply).toContain('never')
     expect(reply).toContain(RUN.threadId)
-    expect(reply).toContain('1,200 in (800 cached), 90 out')
+    expect(reply).toContain('1,200 in (800 cached), 90 out, running total')
     expect(answerOf('/codex-status', {}, READ, undefined).reply).toContain('no Codex turn yet')
   })
 

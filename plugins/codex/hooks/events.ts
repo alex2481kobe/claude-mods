@@ -1,6 +1,6 @@
 // Reads what `codex app-server` reports while a turn runs. Each notification
 // becomes a line of progress for the agent's transcript, the run's answer is
-// its last agent message, and its usage is what the turn cost.
+// its last agent message, and its usage is what the agent's row counts.
 
 import type { ModelUsage } from 'claude-code'
 
@@ -12,7 +12,8 @@ export type Run = {
   error?: string
   usage?: ModelUsage
   isDone?: boolean
-  // The thread's token total before this turn's first request.
+  // The thread's token total before this turn's first request, which the
+  // turn's output is counted from.
   before?: ModelUsage
   // The thread's token total as Codex counts it, cached tokens inside input.
   tokens?: CodexRun['tokens']
@@ -95,12 +96,19 @@ export function apply(run: Run, method: string, params: any): string | undefined
     case 'guardianWarning':
       return `auto review: ${params.message}\n`
     case 'thread/tokenUsage/updated': {
-      // The thread's running total, less what it held before this turn.
+      // The agent's row counts as Claude Code counts a Claude subagent: the
+      // latest step's input (fresh, cache read and cache write) replaces the
+      // last, and each step's output adds to the outputs before it. So the
+      // turn reports its last request's input, which is Codex's current
+      // context, and the output the whole turn generated. The thread's
+      // running total, which counts every cached re-read, goes to
+      // /codex-status instead.
       const total = usageOf(params.tokenUsage?.total)
+      const last = usageOf(params.tokenUsage?.last)
       const raw = params.tokenUsage?.total
       run.tokens = { input: Number(raw?.inputTokens) || 0, cached: Number(raw?.cachedInputTokens) || 0, output: Number(raw?.outputTokens) || 0 }
-      run.before ??= minus(total, usageOf(params.tokenUsage?.last))
-      run.usage = minus(total, run.before)
+      run.before ??= minus(total, last)
+      run.usage = { ...last, output_tokens: minus(total, run.before).output_tokens }
       return undefined
     }
     case 'error':
