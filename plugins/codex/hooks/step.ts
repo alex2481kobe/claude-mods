@@ -149,6 +149,7 @@ export const step: Hook<'turn.step'> = async function* ($, e, next) {
     await note($, agentId, reply)
   }
   let report: Omit<CodexRun, 'tokens'> | undefined
+  let modError: unknown
   // Whether Codex took this step's messages: it started their turn, or its
   // question was answered. From then they are passed on, finished or not.
   let isTaken = false
@@ -233,30 +234,46 @@ export const step: Hook<'turn.step'> = async function* ($, e, next) {
         run.error += '. The codex mod needs the Codex CLI with `codex app-server` (0.159 or newer): `npm install -g @openai/codex`, then `codex login`.'
       }
     } finally {
-      working.delete(agentId)
-      if (server && !held.has(agentId)) server.close()
-      // A step cut off (interrupted, or closed) before Codex took its messages,
-      // asked or failed has passed nothing on: the next step sends them again.
-      const isCutOff = asked.length > 0 && !isTaken && !question && !run.error
-      if (!isCutOff) await update($, sent, all => ({ ...all, [agentId]: [...(all[agentId] ?? []), ...request.texts] }))
-      // What Codex reported this session runs with, and its token total.
-      await record($, agentId, report, run.tokens)
+      try {
+        working.delete(agentId)
+        if (server && !held.has(agentId)) server.close()
+        // A step cut off (interrupted, or closed) before Codex took its messages,
+        // asked or failed has passed nothing on: the next step sends them again.
+        const isCutOff = asked.length > 0 && !isTaken && !question && !run.error
+        if (!isCutOff) await update($, sent, all => ({ ...all, [agentId]: [...(all[agentId] ?? []), ...request.texts] }))
+        // What Codex reported this session runs with, and its token total.
+        await record($, agentId, report, run.tokens)
+      } catch (err) {
+        // Codex has finished by now: a failed write must not lose its answer,
+        // so the error goes into the handback below instead.
+        modError = err
+      }
     }
   }
 
   // Codex's own token counts, so the agent's row shows what the run cost.
   const usage: TurnUsage | null = run.usage ? { ...run.usage, model } : null
-  const codexSaid = question || (asked.length > 0 ? answerOf(run) : undefined)
-  // A report that never reached the caller goes ahead of this step's answer;
-  // with nothing new (the engine ran the loop again) the loop says only that.
-  // A stopped step says only that it stopped, which is never such a report.
-  const undelivered = undeliveredReport(rows)
-  const message =
-    codexSaid === STOPPED
+  let message: string
+  try {
+    const codexSaid = question || (asked.length > 0 ? answerOf(run) : undefined)
+    // A report that never reached the caller goes ahead of this step's answer;
+    // with nothing new (the engine ran the loop again) the loop says only that.
+    // A stopped step says only that it stopped, which is never such a report.
+    const undelivered = undeliveredReport(rows)
+    message = codexSaid === STOPPED
       ? STOPPED
       : request
         ? [...(undelivered ? [undelivered] : []), ...replies, ...(codexSaid ? [codexSaid] : [])].join('\n\n')
         : (undelivered ?? 'codex: nothing new to send to Codex.')
+  } catch (err) {
+    modError ??= err
+    try { message = answerOf(run) } catch { message = progress.slice(-4000) }
+  }
+  if (modError !== undefined) {
+    const error = `codex mod error: ${modError instanceof Error ? modError.message : String(modError)}`
+    message += `\n\n${error}`
+    await note($, agentId, error)
+  }
   if (!handback) {
     // The session line lets a follow-up resume this run (see requestOf).
     const text = run.threadId ? `${message}\n\ncodex session ${run.threadId}` : message
